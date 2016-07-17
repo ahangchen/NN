@@ -4,5 +4,6 @@ from . import views
 
 urlpatterns = [
     url(r'^$', views.train, name='index'),
-    url(r'^$', views.hyper, name='index'),
+    url(r'^train$', views.train, name='train'),
+    url(r'^hyper$', views.hyper, name='hyper'),
 ]

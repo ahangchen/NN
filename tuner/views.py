@@ -1,3 +1,4 @@
+# coding=utf-8
 import json
 
 # Create your views here.

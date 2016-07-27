@@ -64,7 +64,7 @@ class TrainBatch(object):
 
 
 # Simple LSTM Model.
-num_nodes = 16
+num_nodes = 64
 train_batch = TrainBatch()
 
 
@@ -79,20 +79,16 @@ graph = tf.Graph()
 with graph.as_default():
     # Parameters:
     # Input, Forget, Memory, Output gate: input, previous output, and bias.
-    ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 0.1))
-    ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 0.1))
+    ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 1.0))
+    ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 1.0))
     ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]))
 
     # Variables saving state across unrollings.
     saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
     saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
     # Classifier weights and biases.
-    w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 0.1))
+    w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 1.0))
     b = tf.Variable(tf.zeros([EMBEDDING_SIZE]))
-    # 统一logit和label维数
-    w2 = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, (batch_size - hyper_cnt) * batch_cnt_per_step], -0.1, 0.1))
-    w3 = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, batch_size * batch_cnt_per_step], -0.1, 0.1))
-    b2 = tf.Variable(tf.truncated_normal([ (batch_size - hyper_cnt) * batch_cnt_per_step]))
 
 
     def _slice(_x, n, dim):
@@ -138,14 +134,6 @@ with graph.as_default():
         logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
         print(logits)
         print(tf.concat(0, train_labels))
-        # logits = tf.matmul(logits, w2)
-        # logits = tf.nn.relu(logits)
-        # print(logits)
-        # print(w3.get_shape())
-        # print(b2.get_shape())
-        # logits = tf.nn.xw_plus_b(w3, logits, b2)
-        # print(logits)
-        # print(tf.concat(0, train_labels))
         loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
 
     # Optimizer.

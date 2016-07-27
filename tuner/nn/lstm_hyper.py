@@ -13,6 +13,7 @@ EMBEDDING_SIZE = 1
 
 # todo 尝试新的融合hyper的方法
 
+
 def raw_data():
     return [1.0 / (i + 1) for i in range(MAX_DATA_SIZE)]
     # return [1.0001 ** (- i) for i in range(MAX_DATA_SIZE)]

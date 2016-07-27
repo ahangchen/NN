@@ -10,8 +10,7 @@ MAX_DATA_SIZE = 10000000
 batch_cnt_per_step = 5
 hyper_cnt = 5
 hyper_s = [100, 1, 2, 3, 4]
-batch_size = 10 + hyper_cnt  # 10 num and hyper_cnt params to predict one num
-n_hidden = 64  # hidden layer num of features
+batch_size = 20 + hyper_cnt  # 10 num and hyper_cnt params to predict one num
 EMBEDDING_SIZE = 1
 
 
@@ -28,7 +27,9 @@ def piece_data(raw_data, i, piece_size):
 
 
 def piece_label(raw_data, i, piece_size):
-    return raw_data[i + 1: piece_size + i + 1]
+    label = raw_data[i + piece_size: piece_size * 2 + i]
+    label.extend([0, 0, 0, 0, 0])
+    return label
 
 
 def data_idx():
@@ -59,7 +60,7 @@ class TrainBatch(object):
         # print('*' * 80)
         # print(self.cur_idx)
         return cur_train_data.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE)), \
-               cur_train_label.reshape((batch_cnt_per_step, batch_size - hyper_cnt, EMBEDDING_SIZE))
+               cur_train_label.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
 
 
 # Simple LSTM Model.
@@ -89,8 +90,9 @@ with graph.as_default():
     w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 0.1))
     b = tf.Variable(tf.zeros([EMBEDDING_SIZE]))
     # 统一logit和label维数
-    w2 = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, (batch_size - hyper_cnt) * batch_cnt_per_step]))
-    w3 = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, batch_size * batch_cnt_per_step]))
+    w2 = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, (batch_size - hyper_cnt) * batch_cnt_per_step], -0.1, 0.1))
+    w3 = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, batch_size * batch_cnt_per_step], -0.1, 0.1))
+    b2 = tf.Variable(tf.truncated_normal([ (batch_size - hyper_cnt) * batch_cnt_per_step]))
 
 
     def _slice(_x, n, dim):
@@ -114,7 +116,7 @@ with graph.as_default():
 
     # Input data.
     train_inputs = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
-    train_labels = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
+    train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
     # print('#######', train_inputs)
     # print('#######', train_labels)
 
@@ -134,15 +136,22 @@ with graph.as_default():
                                   saved_state.assign(state)]):
         # Classifier.
         logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
-        logits = tf.matmul(w3, tf.matmul(logits, w2))
         print(logits)
         print(tf.concat(0, train_labels))
+        # logits = tf.matmul(logits, w2)
+        # logits = tf.nn.relu(logits)
+        # print(logits)
+        # print(w3.get_shape())
+        # print(b2.get_shape())
+        # logits = tf.nn.xw_plus_b(w3, logits, b2)
+        # print(logits)
+        # print(tf.concat(0, train_labels))
         loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
 
     # Optimizer.
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        1.0, global_step, 50, 0.5, staircase=True)
+        1.0, global_step, 100, 0.8, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -164,10 +173,12 @@ with graph.as_default():
     with tf.control_dependencies([saved_sample_output.assign(sample_output),
                                   saved_sample_state.assign(sample_state)]):
         sample_prediction = tf.nn.xw_plus_b(sample_output, w, b)
-        sample_prediction = tf.matmul(w3, tf.matmul(sample_prediction, w2))
+        # sample_prediction = tf.matmul(w3, tf.matmul(sample_prediction, w2))
 
-num_steps = 3501  # 上限89000
+num_steps = 5001  # 上限89000
 sum_freq = 100
+predicts = []
+labels = []
 
 with tf.Session(graph=graph) as session:
     tf.initialize_all_variables().run()
@@ -185,9 +196,12 @@ with tf.Session(graph=graph) as session:
         # train
         _, l, predictions, lr = session.run(
             [optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
-        predictions = predictions.reshape((batch_cnt_per_step, batch_size - hyper_cnt, EMBEDDING_SIZE))
+        predictions = predictions.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
+
         mean_loss += l
         if step % sum_freq == 0 and step != 0:
+            # print(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist())
+            # print(label_s)
             if step > 0:
                 mean_loss /= sum_freq
             # The mean loss is an estimate of the loss over the last few batches.
@@ -206,11 +220,18 @@ with tf.Session(graph=graph) as session:
                 print(feeds.shape)
                 print(feed_labels.shape)
                 feeds = feeds.reshape((batch_cnt_per_step * batch_size, EMBEDDING_SIZE))
-                feed_labels = feed_labels.reshape((batch_cnt_per_step * (batch_size - hyper_cnt), EMBEDDING_SIZE))
+                feed_labels = feed_labels.reshape(batch_cnt_per_step * batch_size)
                 f_prediction = sample_prediction.eval({sample_input: feeds})
+
                 print ('label:')
                 print(feed_labels)
                 print('predict:')
                 print(f_prediction)
+                predicts.append(feed_labels.tolist()[0])
+                labels.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
                 print('Minibatch perplexity: %.2f' % float(np.exp(logprob(f_prediction, feed_labels))))
                 print('=' * 80)
+    for predict in predicts:
+        print(predict)
+    for label in labels:
+        print(label)

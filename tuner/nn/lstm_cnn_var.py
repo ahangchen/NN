@@ -8,11 +8,11 @@ MAX_DATA_SIZE = 10000000
 # Network Parameters
 # 每次训练5组数据
 batch_cnt_per_step = 5
-hyper_cnt = 5
-hyper_s = [[16], [5], [16], [64], [1]]
+hyper_cnt = 4
+hyper_s = [[16], [5], [16], [64]]
 batch_size = 20 + hyper_cnt  # 10 num and hyper_cnt params to predict one num
 EMBEDDING_SIZE = 1
-optimize_hyper = False
+optimize_hyper = True
 
 
 def raw_data(data_type):
@@ -79,16 +79,16 @@ graph = tf.Graph()
 with graph.as_default():
     # Parameters:
     # Input, Forget, Memory, Output gate: input, previous output, and bias.
-    ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 1.0))
-    ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 1.0))
-    ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]))
+    ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 1.0), trainable=not optimize_hyper)
+    ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 1.0), trainable=not optimize_hyper)
+    ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]), trainable=not optimize_hyper)
 
     # Variables saving state across unrollings.
     saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
     saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
     # Classifier weights and biases.
-    w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 1.0))
-    b = tf.Variable(tf.zeros([EMBEDDING_SIZE]))
+    w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 1.0), trainable=not optimize_hyper)
+    b = tf.Variable(tf.zeros([EMBEDDING_SIZE]), trainable=not optimize_hyper)
 
 
     def _slice(_x, n, dim):
@@ -113,7 +113,8 @@ with graph.as_default():
     # Input data.
     train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
     if optimize_hyper:
-        cnn_hypers = tf.Variable(tf.zeros([hyper_cnt, EMBEDDING_SIZE]))
+        cnn_hypers = tf.Variable(
+            tf.truncated_normal([hyper_cnt, EMBEDDING_SIZE], mean=10.0, stddev=10.0), trainable=optimize_hyper)
     else:
         cnn_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE])
 
@@ -121,7 +122,7 @@ with graph.as_default():
     # print(final_inputs)
 
     train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
-    hyper_vars = tf.Variable(tf.zeros([hyper_cnt]))
+    # hyper_vars = tf.Variable(tf.zeros([hyper_cnt]), trainable=optimize_hyper)
 
     # print('#######', train_inputs)
     # print('#######', train_labels)
@@ -144,12 +145,20 @@ with graph.as_default():
         logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
         print(logits)
         print(tf.concat(0, train_labels))
-        loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
+        if optimize_hyper:
+            # 平方以保证不小于0
+            loss = tf.reduce_mean(tf.square(logits))
+        else:
+            loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
 
     # Optimizer.
     global_step = tf.Variable(0)
-    learning_rate = tf.train.exponential_decay(
-        1.0, global_step, 20, 0.6, staircase=True)
+    if optimize_hyper:
+        learning_rate = tf.train.exponential_decay(
+            10.0, global_step, 20, 0.6, staircase=True)
+    else:
+        learning_rate = tf.train.exponential_decay(
+            1.0, global_step, 20, 0.6, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -192,11 +201,17 @@ with tf.Session(graph=graph) as session:
             feed_dict[train_inputs[i]] = input_s[i]
         for i in range(batch_cnt_per_step):
             feed_dict[train_labels[i]] = label_s[i]
-        if not optimize_hyper:
+        if optimize_hyper:
+            pass
+        else:
             feed_dict[cnn_hypers] = hyper_s
         # train
-        _, l, predictions, lr = session.run(
-            [optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
+        hp_s = _
+        if optimize_hyper:
+            _, hp_s, l, predictions, lr = session.run(
+                [optimizer, cnn_hypers, loss, train_prediction, learning_rate], feed_dict=feed_dict)
+        else:
+            _, l, predictions, lr = session.run([optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
         predictions = predictions.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
 
         mean_loss += l
@@ -209,8 +224,8 @@ with tf.Session(graph=graph) as session:
             print(
                 'Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))
             mean_loss = 0
-            print('Minibatch perplexity: %.2f' % float(
-                np.exp(logprob(predictions, label_s))))
+            # print('Minibatch perplexity: %.2f' % float(
+            #     np.exp(logprob(predictions, label_s))))
             if step % (sum_freq * 1) == 0:
                 # Generate some samples.
                 print(('=' * 40) + 'valid' + '=' * 40)
@@ -235,10 +250,16 @@ with tf.Session(graph=graph) as session:
                 print(f_prediction)
                 labels.append(feed_labels.tolist()[0])
                 predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
-                print('Minibatch perplexity: %.2f' % float(np.exp(logprob(f_prediction, feed_labels))))
+                # print('Minibatch perplexity: %.2f' % float(np.exp(logprob(f_prediction, feed_labels))))
+                print('hypers:')
+                if optimize_hyper:
+                    print(hp_s)
                 print('=' * 80)
+
     for predict in labels:
         print(predict)
     print('=' * 80)
     for label in predicts:
         print(label)
+
+    # 优化超参

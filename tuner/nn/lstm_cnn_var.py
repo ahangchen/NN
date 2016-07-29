@@ -171,7 +171,7 @@ with graph.as_default():
         sample_prediction = tf.nn.xw_plus_b(sample_output, w, b)
         # sample_prediction = tf.matmul(w3, tf.matmul(sample_prediction, w2))
 
-num_steps = 824
+num_steps = 8
 sum_freq = 5
 labels = []
 predicts = []
@@ -275,9 +275,17 @@ with hp_graph.as_default():
 
 
     # Input data.
+    hp_global_step = tf.Variable(0, trainable=False)
     hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
-    hp_cnn_hypers = tf.Variable(
-        tf.truncated_normal([hyper_cnt, EMBEDDING_SIZE], mean=50.0, stddev=50.0), trainable=optimize_hyper)
+    hp_cnn_hypers = [tf.Variable(float(hp_global_step / 1000000 % 100)).value(),
+                     tf.Variable(float(hp_global_step / 10000 % 100)).value(),
+                     tf.Variable(float(hp_global_step / 100 % 100)).value(),
+                     tf.Variable(float(hp_global_step % 100)).value()]
+
+    hp_cnn_hypers = tf.reshape(tf.pack(hp_cnn_hypers), [hyper_cnt, EMBEDDING_SIZE])
+    print(hp_cnn_hypers)
+    # hp_cnn_hypers = tf.Variable(
+    #     tf.truncated_normal([hyper_cnt, EMBEDDING_SIZE], mean=50.0, stddev=50.0), trainable=optimize_hyper)
 
     hp_final_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
     # print(final_inputs)
@@ -306,23 +314,23 @@ with hp_graph.as_default():
         hp_loss = tf.reduce_mean(tf.square(hp_logits))
 
     # Optimizer.
-    hp_global_step = tf.Variable(0, trainable=False)
     hp_learning_rate = tf.train.exponential_decay(
         50.0, hp_global_step, 100, 0.6, staircase=True)
 
     hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
     hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))
+    return_hp_gradients = tf.pack(hp_gradients)
     print(hp_gradients)
     hp_gradients, _ = tf.clip_by_global_norm(hp_gradients, 1.25)
     hp_optimizer = hp_optimizer.apply_gradients(
         zip(hp_gradients, v), global_step=hp_global_step)
 
-    # Predictions, not softmax for no label
-    hp_train_prediction = hp_logits
 
 hp_num_steps = 8
-hp_sum_freq = 5
+hp_sum_freq = 100
 hp_loss_es = []
+fetch_hypers = list()
+fetch_gradients = list()
 
 with tf.Session(graph=hp_graph) as session:
     tf.initialize_all_variables().run()
@@ -345,26 +353,19 @@ with tf.Session(graph=hp_graph) as session:
         # hp_feed_dict[hp_b] = b_f
         # train
 
-        _, hp_s, l, lr = session.run(
-                [hp_optimizer, hp_cnn_hypers, hp_loss, hp_learning_rate], feed_dict=hp_feed_dict)
-
+        hp_s, grads = session.run(
+                [hp_cnn_hypers, return_hp_gradients], feed_dict=hp_feed_dict)
+        fetch_hypers.append(hp_s)
+        fetch_gradients.append(grads)
         # predictions = predictions.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
 
-        hp_mean_loss += l
         #     hp_predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
         if step % hp_sum_freq == 0:
-            hp_loss_es.append(l)
-            # print(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist())
-            # print(label_s)
-            if step > 0:
-                hp_mean_loss /= hp_sum_freq
-            # The mean loss is an estimate of the loss over the last few batches.
-            print(
-                'Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
-            hp_mean_loss = 0
-
             print('hypers:')
             print(hp_s)
+            print('gradients:')
+            print(grads)
             print('=' * 80)
 
-    print(hp_loss_es)
+    print(fetch_hypers)
+    print(fetch_gradients)

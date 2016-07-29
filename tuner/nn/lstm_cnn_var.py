@@ -171,7 +171,7 @@ with graph.as_default():
         sample_prediction = tf.nn.xw_plus_b(sample_output, w, b)
         # sample_prediction = tf.matmul(w3, tf.matmul(sample_prediction, w2))
 
-num_steps = 824  # 上限89000
+num_steps = 824
 sum_freq = 5
 labels = []
 predicts = []
@@ -190,7 +190,7 @@ with tf.Session(graph=graph) as session:
             feed_dict[train_labels[i]] = label_s[i]
         feed_dict[cnn_hypers] = hyper_s
         # train
-        l, predictions, lr = session.run([loss, train_prediction, learning_rate], feed_dict=feed_dict)
+        _, l, predictions, lr = session.run([optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
         predictions = predictions.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
 
         mean_loss += l
@@ -242,128 +242,129 @@ with tf.Session(graph=graph) as session:
     ifcob_f, ifcom_f, ifcox_f, w_f, b_f = session.run([ifcob, ifcom, ifcox, w, b], feed_dict=feed_dict)
 
 
-# # 优化超参
-# hp_graph = tf.Graph()
-# with hp_graph.as_default():
-#     # Parameters:
-#     # Input, Forget, Memory, Output gate: input, previous output, and bias.
-#     hp_ifcox = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, num_nodes * 4])
-#     hp_ifcom = tf.placeholder(tf.float32, shape=[num_nodes, num_nodes * 4])
-#     hp_ifcob = tf.placeholder(tf.float32, shape=[1, num_nodes * 4])
-#
-#     # Variables saving state across unrollings.
-#     hp_saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-#     hp_saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-#     hp_w = tf.placeholder(tf.float32, shape=[num_nodes, EMBEDDING_SIZE])
-#     # Classifier weights and biases.
-#     # hp_b = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, None])
-#
-#     # Definition of the cell computation.
-#     def hp_lstm_cell(cur_input, last_output, last_state, drop):
-#         if drop:
-#             cur_input = tf.nn.dropout(cur_input, 0.8)
-#         ifco_gates = tf.matmul(cur_input, hp_ifcox) + tf.matmul(last_output, hp_ifcom) + hp_ifcob
-#         input_gate = tf.sigmoid(_slice(ifco_gates, 0, num_nodes))
-#         forget_gate = tf.sigmoid(_slice(ifco_gates, 1, num_nodes))
-#         update = _slice(ifco_gates, 2, num_nodes)
-#         last_state = forget_gate * last_state + input_gate * tf.tanh(update)
-#         output_gate = tf.sigmoid(_slice(ifco_gates, 3, num_nodes))
-#         output_gate *= tf.tanh(last_state)
-#         if drop:
-#             output_gate = tf.nn.dropout(output_gate, 0.8)
-#         return output_gate, last_state
-#
-#
-#     # Input data.
-#     hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
-#     hp_cnn_hypers = tf.Variable(
-#         tf.truncated_normal([hyper_cnt, EMBEDDING_SIZE], mean=10.0, stddev=10.0), trainable=optimize_hyper)
-#
-#     hp_final_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
-#     # print(final_inputs)
-#
-#     hp_train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
-#
-#     # Unrolled LSTM loop.
-#     hp_outputs = list()
-#     hp_output = hp_saved_output
-#     hp_state = hp_saved_state
-#     #######################################################################################
-#     # This is multi lstm layer
-#     for i in hp_final_inputs:
-#         hp_output, state = hp_lstm_cell(i, hp_output, hp_state, True)
-#         hp_outputs.append(hp_output)
-#     #######################################################################################
-#
-#     # State saving
-#     with tf.control_dependencies([hp_saved_output.assign(hp_output),
-#                                   hp_saved_state.assign(hp_state)]):
-#         # Classifier.
-#         hp_logits = tf.matmul(tf.concat(0, hp_outputs), hp_w)
-#         print(hp_logits)
-#         print(tf.concat(0, hp_train_labels))
-#         # 平方以保证不小于0
-#         hp_loss = tf.reduce_mean(tf.square(hp_logits))
-#
-#     # Optimizer.
-#     hp_global_step = tf.Variable(0, trainable=False)
-#     hp_learning_rate = tf.train.exponential_decay(
-#         1.0, hp_global_step, 20, 0.6, staircase=True)
-#
-#     hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
-#     hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))
-#     hp_gradients, _ = tf.clip_by_global_norm(hp_gradients, 1.25)
-#     hp_optimizer = hp_optimizer.apply_gradients(
-#         zip(hp_gradients, v), global_step=hp_global_step)
-#
-#     # Predictions, not softmax for no label
-#     hp_train_prediction = hp_logits
-#
-# hp_num_steps = 824  # 上限89000
-# hp_sum_freq = 5
-# hp_loss_es = []
-#
-# with tf.Session(graph=hp_graph) as session:
-#     tf.initialize_all_variables().run()
-#     train_batch.reset()
-#     print('Initialized')
-#     hp_mean_loss = 0
-#     for step in range(hp_num_steps):
-#         # prepare and feed train data
-#         hp_input_s, hp_label_s = train_batch.next_train()
-#         hp_feed_dict = dict()
-#         for i in range(batch_cnt_per_step):
-#             hp_feed_dict[hp_train_inputs[i]] = hp_input_s[i]
-#         for i in range(batch_cnt_per_step):
-#             hp_feed_dict[hp_train_labels[i]] = hp_label_s[i]
-#         hp_feed_dict[hp_ifcob] = ifcob_f
-#         hp_feed_dict[hp_ifcom] = ifcom_f
-#         hp_feed_dict[hp_ifcox] = ifcox_f
-#         hp_feed_dict[hp_w] = w_f
-#         # print(b_f.dtype)
-#         # hp_feed_dict[hp_b] = b_f
-#         # train
-#
-#         hp_s, l, lr = session.run(
-#                 [hp_cnn_hypers, hp_loss, hp_learning_rate], feed_dict=hp_feed_dict)
-#
-#         # predictions = predictions.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
-#
-#         hp_mean_loss += l
-#         #     hp_predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
-#         if step % hp_sum_freq == 0:
-#             hp_loss_es.append(l)
-#             # print(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist())
-#             # print(label_s)
-#             if step > 0:
-#                 hp_mean_loss /= hp_sum_freq
-#             # The mean loss is an estimate of the loss over the last few batches.
-#             print(
-#                 'Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
-#             hp_mean_loss = 0
-#
-#             print('hypers:')
-#             print(hp_s)
-#             print('=' * 80)
-#
-#     print(hp_loss_es)
+# 优化超参
+hp_graph = tf.Graph()
+with hp_graph.as_default():
+    # Parameters:
+    # Input, Forget, Memory, Output gate: input, previous output, and bias.
+    hp_ifcox = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, num_nodes * 4])
+    hp_ifcom = tf.placeholder(tf.float32, shape=[num_nodes, num_nodes * 4])
+    hp_ifcob = tf.placeholder(tf.float32, shape=[1, num_nodes * 4])
+
+    # Variables saving state across unrollings.
+    hp_saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
+    hp_saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
+    hp_w = tf.placeholder(tf.float32, shape=[num_nodes, EMBEDDING_SIZE])
+    # Classifier weights and biases.
+    # hp_b = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, None])
+
+    # Definition of the cell computation.
+    def hp_lstm_cell(cur_input, last_output, last_state, drop):
+        if drop:
+            cur_input = tf.nn.dropout(cur_input, 0.8)
+        ifco_gates = tf.matmul(cur_input, hp_ifcox) + tf.matmul(last_output, hp_ifcom) + hp_ifcob
+        input_gate = tf.sigmoid(_slice(ifco_gates, 0, num_nodes))
+        forget_gate = tf.sigmoid(_slice(ifco_gates, 1, num_nodes))
+        update = _slice(ifco_gates, 2, num_nodes)
+        last_state = forget_gate * last_state + input_gate * tf.tanh(update)
+        output_gate = tf.sigmoid(_slice(ifco_gates, 3, num_nodes))
+        output_gate *= tf.tanh(last_state)
+        if drop:
+            output_gate = tf.nn.dropout(output_gate, 0.8)
+        return output_gate, last_state
+
+
+    # Input data.
+    hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
+    hp_cnn_hypers = tf.Variable(
+        tf.truncated_normal([hyper_cnt, EMBEDDING_SIZE], mean=50.0, stddev=50.0), trainable=optimize_hyper)
+
+    hp_final_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
+    # print(final_inputs)
+
+    hp_train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
+
+    # Unrolled LSTM loop.
+    hp_outputs = list()
+    hp_output = hp_saved_output
+    hp_state = hp_saved_state
+    #######################################################################################
+    # This is multi lstm layer
+    for i in hp_final_inputs:
+        hp_output, state = hp_lstm_cell(i, hp_output, hp_state, True)
+        hp_outputs.append(hp_output)
+    #######################################################################################
+
+    # State saving
+    with tf.control_dependencies([hp_saved_output.assign(hp_output),
+                                  hp_saved_state.assign(hp_state)]):
+        # Classifier.
+        hp_logits = tf.matmul(tf.concat(0, hp_outputs), hp_w)
+        print(hp_logits)
+        print(tf.concat(0, hp_train_labels))
+        # 平方以保证不小于0
+        hp_loss = tf.reduce_mean(tf.square(hp_logits))
+
+    # Optimizer.
+    hp_global_step = tf.Variable(0, trainable=False)
+    hp_learning_rate = tf.train.exponential_decay(
+        50.0, hp_global_step, 100, 0.6, staircase=True)
+
+    hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
+    hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))
+    print(hp_gradients)
+    hp_gradients, _ = tf.clip_by_global_norm(hp_gradients, 1.25)
+    hp_optimizer = hp_optimizer.apply_gradients(
+        zip(hp_gradients, v), global_step=hp_global_step)
+
+    # Predictions, not softmax for no label
+    hp_train_prediction = hp_logits
+
+hp_num_steps = 8
+hp_sum_freq = 5
+hp_loss_es = []
+
+with tf.Session(graph=hp_graph) as session:
+    tf.initialize_all_variables().run()
+    train_batch.reset()
+    print('Initialized')
+    hp_mean_loss = 0
+    for step in range(hp_num_steps):
+        # prepare and feed train data
+        hp_input_s, hp_label_s = train_batch.next_train()
+        hp_feed_dict = dict()
+        for i in range(batch_cnt_per_step):
+            hp_feed_dict[hp_train_inputs[i]] = hp_input_s[i]
+        for i in range(batch_cnt_per_step):
+            hp_feed_dict[hp_train_labels[i]] = hp_label_s[i]
+        hp_feed_dict[hp_ifcob] = ifcob_f
+        hp_feed_dict[hp_ifcom] = ifcom_f
+        hp_feed_dict[hp_ifcox] = ifcox_f
+        hp_feed_dict[hp_w] = w_f
+        # print(b_f.dtype)
+        # hp_feed_dict[hp_b] = b_f
+        # train
+
+        _, hp_s, l, lr = session.run(
+                [hp_optimizer, hp_cnn_hypers, hp_loss, hp_learning_rate], feed_dict=hp_feed_dict)
+
+        # predictions = predictions.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE))
+
+        hp_mean_loss += l
+        #     hp_predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
+        if step % hp_sum_freq == 0:
+            hp_loss_es.append(l)
+            # print(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist())
+            # print(label_s)
+            if step > 0:
+                hp_mean_loss /= hp_sum_freq
+            # The mean loss is an estimate of the loss over the last few batches.
+            print(
+                'Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
+            hp_mean_loss = 0
+
+            print('hypers:')
+            print(hp_s)
+            print('=' * 80)
+
+    print(hp_loss_es)

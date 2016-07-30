@@ -13,7 +13,7 @@ def train(request):
     :param request:
     :return:
     """
-    cur_loss = request.POST['cur_loss']
+    cur_loss = request.POST.getlist('cur_loss')
     hyper_json = request.POST['hyper_json']
     hypers = json.loads(hyper_json)
     ret = train_cnn(hypers, cur_loss)

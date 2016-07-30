@@ -9,7 +9,7 @@ MAX_DATA_SIZE = 10000000
 # 每次训练5组数据
 batch_cnt_per_step = 5
 hyper_cnt = 5
-hyper_s = [16, 5, 16, 64, 1]
+hyper_s = [5, 5, 5, 5, 5]
 batch_size = 20 + hyper_cnt  # 10 num and hyper_cnt params to predict one num
 EMBEDDING_SIZE = 1
 

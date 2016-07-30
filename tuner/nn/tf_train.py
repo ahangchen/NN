@@ -2,23 +2,79 @@
 import numpy as np
 
 from tuner.ctrl.const_define import batch_cnt_per_step, EMBEDDING_SIZE
-from tuner.nn.lstm_cnn_var import fit_cnn_loss
+from tuner.nn.lstm_cnn_var import fit_cnn_loss, init_graph
 
 CONTINUE_TRAIN = 0
 NN_OK = 0
 END_TRAIN = 1
 
+cnn_batch_size = 20
 
-def train_cnn(hypers, loss):
+graph_dict = dict()
+graph_vars = dict()
+
+
+def train_cnn(hypers, cnn_loss):
+    if 'graph' in graph_dict:
+        graph = graph_dict['graph']
+        saver = graph_dict['saver']
+        train_inputs = graph_dict['train_inputs']
+        train_labels = graph_dict['train_labels']
+        cnn_hypers = graph_dict['cnn_hypers']
+        optimizer = graph_dict['optimizer']
+        loss = graph_dict['loss']
+        train_prediction = graph_dict['train_prediction']
+        learning_rate = graph_dict['learning_rate']
+        ifcob = graph_dict['ifcob']
+        ifcom = graph_dict['ifcom']
+        ifcox = graph_dict['ifcox']
+        w = graph_dict['w']
+        b = graph_dict['b']
+    else:
+        graph, saver, train_inputs, train_labels, cnn_hypers, optimizer, loss, train_prediction, learning_rate, \
+        ifcob, ifcom, ifcox, w, b = init_graph(hypers, cnn_batch_size)
+        graph_dict['graph'] = graph
+        graph_dict['saver'] = saver
+        graph_dict['train_inputs'] = train_inputs
+        graph_dict['train_labels'] = train_labels
+        graph_dict['cnn_hypers'] = cnn_hypers
+        graph_dict['optimizer'] = optimizer
+        graph_dict['loss'] = loss
+        graph_dict['train_prediction'] = train_prediction
+        graph_dict['learning_rate'] = learning_rate
+        graph_dict['ifcob'] = ifcob
+        graph_dict['ifcom'] = ifcom
+        graph_dict['ifcox'] = ifcox
+        graph_dict['w'] = w
+        graph_dict['b'] = b
+
+    # create feature and label from cnn_loss
+    feature_s = np.array(cnn_loss[: batch_cnt_per_step * cnn_batch_size * EMBEDDING_SIZE]).reshape(
+        [batch_cnt_per_step, cnn_batch_size, EMBEDDING_SIZE])
     hyper_cnt = len(hypers)
-    batch_size = 20 + hyper_cnt
-    feature_s = np.array(loss[: batch_cnt_per_step * batch_size * EMBEDDING_SIZE]).reshape(
-        [batch_cnt_per_step, batch_size, EMBEDDING_SIZE])
-    label_s = np.array(loss[1:]).reshape(
-        [batch_cnt_per_step, batch_size, EMBEDDING_SIZE])
-    fit_cnn_loss(feature_s, label_s, hypers)
+    hyper_zeros = [0 for _ in range(hyper_cnt)]
+    raw_labels = list()
+    for i in range(batch_cnt_per_step):
+        piece = cnn_loss[i + 1: i + cnn_batch_size + 1]
+        piece.extend(hyper_zeros)
+        raw_labels.append(piece)
+    print(np.array(raw_labels).shape)
+    label_s = np.array(raw_labels).reshape([batch_cnt_per_step, cnn_batch_size + hyper_cnt, EMBEDDING_SIZE])
 
-    return CONTINUE_TRAIN
+    # create np hyper from hypers
+    np_hyper_s = np.array(hypers).reshape([hyper_cnt, EMBEDDING_SIZE])
+    ifcob_f, ifcom_f, ifcox_f, w_f = fit_cnn_loss(feature_s, label_s, np_hyper_s, graph, saver,
+                                                  train_inputs, train_labels, cnn_hypers, optimizer, loss,
+                                                  train_prediction, learning_rate,
+                                                  ifcob, ifcom, ifcox, w, b)
+    if ifcob is None:
+        return CONTINUE_TRAIN
+    else:
+        graph_vars['ifcob_f'] = ifcob_f
+        graph_vars['ifcom_f'] = ifcom_f
+        graph_vars['ifcox_f'] = ifcox_f
+        graph_vars['w_f'] = w_f
+        return END_TRAIN
 
 
 def best_hyper():
@@ -640,7 +696,8 @@ raw_data = [2.534164, 2.8933029, 2.5303123, 2.7081528, 3.368371, 2.6903017, 2.41
 
 
 def test():
-    train_cnn([16, 5, 16, 64], raw_data[0: 121])
+    train_cnn([16, 5, 16, 64], raw_data[0: 101])
+
 
 if __name__ == '__main__':
     test()

@@ -18,117 +18,130 @@ def logprob(predictions, labels):
 
 
 hyper_cnt = 0
-batch_size = 20 + hyper_cnt
+batch_size = 0
+has_init = False
 
 
-def init_graph(hypers):
+def init_graph(hypers, cnn_batch_size):
+    global hyper_cnt
+    global batch_size
+    global has_init
     hyper_cnt = len(hypers)
-    batch_size = 20 + hyper_cnt
+    batch_size = cnn_batch_size + hyper_cnt
+    return init_model()
 
 
-graph = tf.Graph()
-with graph.as_default():
-    # Parameters:
-    # Input, Forget, Memory, Output gate: input, previous output, and bias.
-    ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 1.0))
-    ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 1.0))
-    ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]))
-
-    # Variables saving state across unrollings.
-    saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-    saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-    # Classifier weights and biases.
-    w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 1.0))
-    b = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE]))
+def _slice(_x, n, dim):
+    return _x[:, n * dim:(n + 1) * dim]
 
 
-    def _slice(_x, n, dim):
-        return _x[:, n * dim:(n + 1) * dim]
+def init_model():
+    global hyper_cnt
+    global batch_size
+    graph = tf.Graph()
+    with graph.as_default():
+        # Parameters:
+        # Input, Forget, Memory, Output gate: input, previous output, and bias.
+        ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 1.0))
+        ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 1.0))
+        ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]))
 
+        # Variables saving state across unrollings.
+        saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
+        saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
+        # Classifier weights and biases.
+        w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 1.0))
+        b = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE]))
 
-    # Definition of the cell computation.
-    def lstm_cell(cur_input, last_output, last_state, drop):
-        if drop:
-            cur_input = tf.nn.dropout(cur_input, 0.8)
-        ifco_gates = tf.matmul(cur_input, ifcox) + tf.matmul(last_output, ifcom) + ifcob
-        input_gate = tf.sigmoid(_slice(ifco_gates, 0, num_nodes))
-        forget_gate = tf.sigmoid(_slice(ifco_gates, 1, num_nodes))
-        update = _slice(ifco_gates, 2, num_nodes)
-        last_state = forget_gate * last_state + input_gate * tf.tanh(update)
-        output_gate = tf.sigmoid(_slice(ifco_gates, 3, num_nodes))
-        output_gate *= tf.tanh(last_state)
-        if drop:
-            output_gate = tf.nn.dropout(output_gate, 0.8)
-        return output_gate, last_state
+        # Definition of the cell computation.
+        def lstm_cell(cur_input, last_output, last_state, drop):
+            if drop:
+                cur_input = tf.nn.dropout(cur_input, 0.8)
+            ifco_gates = tf.matmul(cur_input, ifcox) + tf.matmul(last_output, ifcom) + ifcob
+            input_gate = tf.sigmoid(_slice(ifco_gates, 0, num_nodes))
+            forget_gate = tf.sigmoid(_slice(ifco_gates, 1, num_nodes))
+            update = _slice(ifco_gates, 2, num_nodes)
+            last_state = forget_gate * last_state + input_gate * tf.tanh(update)
+            output_gate = tf.sigmoid(_slice(ifco_gates, 3, num_nodes))
+            output_gate *= tf.tanh(last_state)
+            if drop:
+                output_gate = tf.nn.dropout(output_gate, 0.8)
+            return output_gate, last_state
 
+        # Input data.
+        train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in
+                        range(batch_cnt_per_step)]
+        cnn_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE])
 
-    # Input data.
-    train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in
-                    range(batch_cnt_per_step)]
-    cnn_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE])
+        final_inputs = [tf.concat(0, [data, cnn_hypers]) for data in train_inputs]
+        # print(final_inputs)
 
-    final_inputs = [tf.concat(0, [data, cnn_hypers]) for data in train_inputs]
-    # print(final_inputs)
+        train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in
+                        range(batch_cnt_per_step)]
 
-    train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in range(batch_cnt_per_step)]
+        # Unrolled LSTM loop.
+        outputs = list()
+        output = saved_output
+        state = saved_state
+        #######################################################################################
+        # This is multi lstm layer
+        for i in final_inputs:
+            output, state = lstm_cell(i, output, state, True)
+            outputs.append(output)
+        #######################################################################################
 
-    # Unrolled LSTM loop.
-    outputs = list()
-    output = saved_output
-    state = saved_state
-    #######################################################################################
-    # This is multi lstm layer
-    for i in final_inputs:
-        output, state = lstm_cell(i, output, state, True)
-        outputs.append(output)
-    #######################################################################################
+        # State saving
+        with tf.control_dependencies([saved_output.assign(output),
+                                      saved_state.assign(state)]):
+            # Classifier.
+            logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
+            print(logits)
+            print(tf.concat(0, train_labels))
+            loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
 
-    # State saving
-    with tf.control_dependencies([saved_output.assign(output),
-                                  saved_state.assign(state)]):
-        # Classifier.
-        logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
-        print(logits)
-        print(tf.concat(0, train_labels))
-        loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
+        # Optimizer.
+        global_step = tf.Variable(0)
+        learning_rate = tf.train.exponential_decay(
+            1.0, global_step, 20, 0.6, staircase=True)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+        gradients, v = zip(*optimizer.compute_gradients(loss))
+        gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
+        optimizer = optimizer.apply_gradients(
+            zip(gradients, v), global_step=global_step)
 
-    # Optimizer.
-    global_step = tf.Variable(0)
-    learning_rate = tf.train.exponential_decay(
-        1.0, global_step, 20, 0.6, staircase=True)
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-    gradients, v = zip(*optimizer.compute_gradients(loss))
-    gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
-    optimizer = optimizer.apply_gradients(
-        zip(gradients, v), global_step=global_step)
+        # Predictions, not softmax for no label
+        train_prediction = logits
 
-    # Predictions, not softmax for no label
-    train_prediction = logits
-
-    # Sampling and validation eval: batch 1, no unrolling.
-    sample_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for i in
-                     range(batch_cnt_per_step)]
-    sample_inputs = [tf.concat(0, [sample_input, cnn_hypers]) for sample_input in sample_inputs]
-    sample_inputs = tf.concat(0, sample_inputs)
-    saved_sample_output = tf.Variable(tf.zeros([batch_size * batch_cnt_per_step, num_nodes]))
-    saved_sample_state = tf.Variable(tf.zeros([batch_size * batch_cnt_per_step, num_nodes]))
-    reset_sample_state = tf.group(
-        saved_sample_output.assign(tf.zeros([batch_size * batch_cnt_per_step, num_nodes])),
-        saved_sample_state.assign(tf.zeros([batch_size * batch_cnt_per_step, num_nodes])))
-    sample_output, sample_state = lstm_cell(
-        sample_inputs, saved_sample_output, saved_sample_state, False)
-    with tf.control_dependencies([saved_sample_output.assign(sample_output),
-                                  saved_sample_state.assign(sample_state)]):
-        sample_prediction = tf.nn.xw_plus_b(sample_output, w, b)
-    saver = tf.train.Saver()
+        # Sampling and validation eval: batch 1, no unrolling.
+        sample_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for i in
+                         range(batch_cnt_per_step)]
+        sample_inputs = [tf.concat(0, [sample_input, cnn_hypers]) for sample_input in sample_inputs]
+        sample_inputs = tf.concat(0, sample_inputs)
+        saved_sample_output = tf.Variable(tf.zeros([batch_size * batch_cnt_per_step, num_nodes]))
+        saved_sample_state = tf.Variable(tf.zeros([batch_size * batch_cnt_per_step, num_nodes]))
+        reset_sample_state = tf.group(
+            saved_sample_output.assign(tf.zeros([batch_size * batch_cnt_per_step, num_nodes])),
+            saved_sample_state.assign(tf.zeros([batch_size * batch_cnt_per_step, num_nodes])))
+        sample_output, sample_state = lstm_cell(
+            sample_inputs, saved_sample_output, saved_sample_state, False)
+        with tf.control_dependencies([saved_sample_output.assign(sample_output),
+                                      saved_sample_state.assign(sample_state)]):
+            sample_prediction = tf.nn.xw_plus_b(sample_output, w, b)
+        saver = tf.train.Saver()
+    return graph, saver, train_inputs, train_labels, cnn_hypers, optimizer, loss, train_prediction, learning_rate, \
+           ifcob, ifcom, ifcox, w, b
 
 mean_loss = 0
 step = 0
 
 
-def fit_cnn_loss(input_s, label_s, hyper_s):
+def fit_cnn_loss(input_s, label_s, hyper_s,
+                 graph, saver,
+                 train_inputs, train_labels, cnn_hypers, optimizer, loss, train_prediction, learning_rate,
+                 ifcob, ifcom, ifcox, w, b):
+    global hyper_cnt
+    global batch_size
     hyper_cnt = len(hyper_s)
-    batch_size = 20 + hyper_cnt
     global step
     sum_freq = 5
     labels = []
@@ -137,7 +150,7 @@ def fit_cnn_loss(input_s, label_s, hyper_s):
     with tf.Session(graph=graph) as fit_cnn_ses:
         if os.path.exists("model.ckpt"):
             # Restore variables from disk.
-            saver.restore(fit_cnn_ses, "/tmp/model.ckpt")
+            saver.restore(fit_cnn_ses, "model.ckpt")
             print("Model restored.")
         tf.initialize_all_variables().run()
 
@@ -176,14 +189,7 @@ def fit_cnn_loss(input_s, label_s, hyper_s):
         for label in predicts:
             print(label)
 
-        # to fetch variables
-        feed_dict = dict()
-        for i in range(batch_cnt_per_step):
-            feed_dict[train_inputs[i]] = input_s[i]
-        for i in range(batch_cnt_per_step):
-            feed_dict[train_labels[i]] = label_s[i]
-        feed_dict[cnn_hypers] = hyper_s
-        ifcob_f, ifcom_f, ifcox_f, w_f = fit_cnn_ses.run([ifcob, ifcom, ifcox, w, b], feed_dict=feed_dict)
+        ifcob_f, ifcom_f, ifcox_f, w_f = fit_cnn_ses.run([ifcob, ifcom, ifcox, w], feed_dict=feed_dict)
         if ret:
             return ifcob_f, ifcom_f, ifcox_f, w_f
         else:
@@ -307,7 +313,8 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
             hp_feed_dict[hp_ifcox] = ifcox_f
             hp_feed_dict[hp_w] = w_f
             _, hp_s, grads, l, lr, f_pred = session.run(
-                [hp_optimizer, hp_cnn_hypers, return_gradients, hp_loss, hp_learning_rate, hp_train_prediction], feed_dict=hp_feed_dict)
+                [hp_optimizer, hp_cnn_hypers, return_gradients, hp_loss, hp_learning_rate, hp_train_prediction],
+                feed_dict=hp_feed_dict)
             # print("hp_train_prediction shape:")
             # print(f_pred.shape)
             f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE)))

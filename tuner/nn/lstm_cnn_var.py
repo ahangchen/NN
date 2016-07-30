@@ -583,7 +583,7 @@ def piece_data(raw_data, i, piece_size):
 
 
 def piece_label(raw_data, i, piece_size):
-    label = raw_data[i + piece_size: piece_size * 2 + i]
+    label = raw_data[i + 1: piece_size + 1 + i]
     label.extend([0 for _ in range(hyper_cnt)])
     return label
 
@@ -730,8 +730,8 @@ with graph.as_default():
         sample_prediction = tf.nn.xw_plus_b(sample_output, w, b)
         # sample_prediction = tf.matmul(w3, tf.matmul(sample_prediction, w2))
 
-num_steps = 512
-sum_freq = 10
+num_steps = 128
+sum_freq = 5
 labels = []
 predicts = []
 
@@ -762,8 +762,6 @@ with tf.Session(graph=graph) as session:
             print(
                 'Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))
             mean_loss = 0
-            # print('Minibatch perplexity: %.2f' % float(
-            #     np.exp(logprob(predictions, label_s))))
             if step % (sum_freq * 1) == 0:
                 # Generate some samples.
                 # print(('=' * 40) + 'valid' + '=' * 40)
@@ -789,7 +787,6 @@ with tf.Session(graph=graph) as session:
                 # print(f_prediction)
                 labels.append(feed_labels.tolist()[0])
                 predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
-                # print('Minibatch perplexity: %.2f' % float(np.exp(logprob(f_prediction, feed_labels))))
                 print('=' * 80)
     for predict in labels:
         print(predict)
@@ -820,7 +817,6 @@ with hp_graph.as_default():
     hp_saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
     hp_saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
     hp_w = tf.placeholder(tf.float32, shape=[num_nodes, EMBEDDING_SIZE])
-
 
     # Definition of the cell computation.
     def hp_lstm_cell(cur_input, last_output, last_state, drop):
@@ -879,29 +875,41 @@ with hp_graph.as_default():
     # Optimizer.
     hp_global_step = tf.Variable(0, trainable=False)
     hp_learning_rate = tf.train.exponential_decay(
-        50.0, hp_global_step, 20, 0.6, staircase=True)
+        0.1, hp_global_step, 20, 0.1, staircase=True)
 
     hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
     hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))
     print(hp_gradients)
     hp_gradients, _ = tf.clip_by_global_norm(hp_gradients, 1.25)
+    return_gradients = tf.pack(hp_gradients)
     hp_optimizer = hp_optimizer.apply_gradients(
         zip(hp_gradients, v), global_step=hp_global_step)
-    return_gradients = tf.pack(hp_gradients)
     # Predictions, not softmax for no label
     hp_train_prediction = hp_logits
 
 hp_num_steps = 800
 hp_sum_freq = 50
 hp_loss_es = []
+f_labels = list()
+f_features = list()
 
 with tf.Session(graph=hp_graph) as session:
     tf.initialize_all_variables().run()
-    train_batch.reset()
+    # train_batch.reset()
     print('Initialized')
     hp_mean_loss = 0
     for step in range(hp_num_steps):
-        hp_input_s, hp_label_s = train_batch.next_train()
+        if step == 0:
+            hp_input_s, hp_label_s = train_batch.next_train()
+        else:
+            hp_input_s = f_features.pop()
+            hp_label_s = f_labels.pop()
+        f_features.append(hp_label_s[:, :20, :])
+        # print("*" * 80)
+        # print(hp_input_s)
+        # print("*" * 80)
+        # print(hp_label_s)
+        # print("*" * 80)
         hp_feed_dict = dict()
         for i in range(batch_cnt_per_step):
             hp_feed_dict[hp_train_inputs[i]] = hp_input_s[i]
@@ -911,12 +919,15 @@ with tf.Session(graph=hp_graph) as session:
         hp_feed_dict[hp_ifcom] = ifcom_f
         hp_feed_dict[hp_ifcox] = ifcox_f
         hp_feed_dict[hp_w] = w_f
-        _, hp_s, grads, l, lr = session.run(
-            [hp_optimizer, hp_cnn_hypers, return_gradients, hp_loss, hp_learning_rate], feed_dict=hp_feed_dict)
-
+        _, hp_s, grads, l, lr, f_pred = session.run(
+            [hp_optimizer, hp_cnn_hypers, return_gradients, hp_loss, hp_learning_rate, hp_train_prediction], feed_dict=hp_feed_dict)
+        # print("hp_train_prediction shape:")
+        # print(f_pred.shape)
+        f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE)))
         hp_mean_loss += l
         #     hp_predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
         if step % hp_sum_freq == 0:
+            print('=' * 35 + 'gradients' + '=' * 35)
             print(grads)
             hp_loss_es.append(l)
             # print(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist())

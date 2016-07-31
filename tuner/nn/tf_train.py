@@ -697,6 +697,8 @@ raw_data = [2.534164, 2.8933029, 2.5303123, 2.7081528, 3.368371, 2.6903017, 2.41
 
 def test():
     train_cnn([16, 5, 16, 64], raw_data[0: 101])
+    for i in range(100):
+        train_cnn([16, 5, 16, 64], raw_data[i: i + 100])
 
 
 if __name__ == '__main__':

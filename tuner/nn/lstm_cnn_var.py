@@ -329,8 +329,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
                 if step > 0:
                     hp_mean_loss /= hp_sum_freq
                 # The mean loss is an estimate of the loss over the last few batches.
-                print(
-                    'Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
+                print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
                 hp_mean_loss = 0
 
                 print('hypers:')

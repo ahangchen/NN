@@ -2,7 +2,7 @@
 import json
 
 # Create your views here.
-from tuner.nn.tf_train import train_cnn, CONTINUE_TRAIN, END_TRAIN, NN_OK, best_hyper
+from tuner.nn.tf_train import train_cnn, CONTINUE_TRAIN, END_TRAIN, NN_OK, better_hyper
 from tuner.util import json_helper
 
 
@@ -30,4 +30,4 @@ def hyper(request):
     :param request:
     :return:
     """
-    return json_helper.dump_err_msg(NN_OK, best_hyper())
+    return json_helper.dump_err_msg(NN_OK, better_hyper())

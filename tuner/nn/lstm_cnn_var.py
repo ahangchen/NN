@@ -3,6 +3,7 @@
 import numpy as np
 import tensorflow as tf
 import os
+import math
 
 # Simple LSTM Model.
 from tuner.ctrl.const_define import EMBEDDING_SIZE, batch_cnt_per_step
@@ -97,7 +98,7 @@ def init_model():
             logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
             print(logits)
             print(tf.concat(0, train_labels))
-            loss = tf.reduce_mean(tf.square(tf.sub(logits, tf.concat(0, train_labels))))
+            loss = tf.reduce_mean(tf.sqrt(tf.square(tf.sub(logits, tf.concat(0, train_labels)))))
 
         # Optimizer.
         global_step = tf.Variable(0)
@@ -133,8 +134,12 @@ def init_model():
 
 mean_loss = 0
 step = 0
+save_path = "model.ckpt"
+labels = list()
+predicts = list()
 
 
+# 每次fit一个step会比较慢
 def fit_cnn_loss(input_s, label_s, hyper_s,
                  graph, saver,
                  train_inputs, train_labels, cnn_hypers, optimizer, loss, train_prediction, learning_rate,
@@ -143,18 +148,21 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
     global batch_size
     hyper_cnt = len(hyper_s)
     global step
+    global save_path
     sum_freq = 5
-    labels = []
-    predicts = []
+    global labels
+    global predicts
+
     ret = False
     with tf.Session(graph=graph) as fit_cnn_ses:
-        if os.path.exists("model.ckpt"):
+        if os.path.exists(save_path):
             # Restore variables from disk.
-            saver.restore(fit_cnn_ses, "model.ckpt")
-            print("Model restored.")
-        tf.initialize_all_variables().run()
+            saver.restore(fit_cnn_ses, save_path)
+            # print("Model restored.")
+        else:
+            tf.initialize_all_variables().run()
+            print('Initialized')
 
-        print('Initialized')
         global mean_loss
         mean_loss = 0
         # prepare and feed train data
@@ -167,51 +175,49 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
         # train
         _, l, predictions, lr = fit_cnn_ses.run([optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
         mean_loss += l
+        # 每次只有第一个loss是有意义的
+        labels.append(label_s.reshape(batch_cnt_per_step * batch_size).tolist()[0])
+        predicts.append(predictions.reshape(batch_cnt_per_step * batch_size).tolist()[0])
         if step % sum_freq == 0:
-            labels.append(label_s.tolist()[0])
-            predicts.append(predictions.reshape(batch_cnt_per_step * batch_size).tolist()[0])
             if step > 0 and step % sum_freq * 10 == 0:
                 mean_loss /= sum_freq
                 # 唯有损失小于label的5%时才认为可停止
                 if mean_loss < np.mean(label_s) * 0.05:
                     ret = True
-            print('Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))
-            mean_loss = 0
-            print('=' * 80)
+                    print('mean loss < label_s * 5%')
+                print(mean_loss)
+                print(np.mean(label_s))
+                print('Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))
+                mean_loss = 0
 
         # some work for conclusion
         step += 1
-        save_path = saver.save(fit_cnn_ses, "model.ckpt")
-        print("Model saved in file: %s" % save_path)
-        for predict in labels:
-            print(predict)
-        print('=' * 80)
-        for label in predicts:
-            print(label)
-
-        ifcob_f, ifcom_f, ifcox_f, w_f = fit_cnn_ses.run([ifcob, ifcom, ifcox, w], feed_dict=feed_dict)
+        saver.save(fit_cnn_ses, save_path)
+        # print("Model saved in file: %s" % save_path)
         if ret:
+            for label in labels:
+                print(label)
+            print('=' * 80)
+            for predict in predicts:
+                print(predict)
+
+            ifcob_f, ifcom_f, ifcox_f, w_f = fit_cnn_ses.run([ifcob, ifcom, ifcox, w], feed_dict=feed_dict)
             return ifcob_f, ifcom_f, ifcox_f, w_f
         else:
             return None, None, None, None
 
 
 def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hyper_s):
-    # 优化超参
     hp_graph = tf.Graph()
     with hp_graph.as_default():
-        # Parameters:
-        # Input, Forget, Memory, Output gate: input, previous output, and bias.
         hp_ifcox = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, num_nodes * 4])
         hp_ifcom = tf.placeholder(tf.float32, shape=[num_nodes, num_nodes * 4])
         hp_ifcob = tf.placeholder(tf.float32, shape=[1, num_nodes * 4])
 
-        # Variables saving state across unrollings.
         hp_saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
         hp_saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
         hp_w = tf.placeholder(tf.float32, shape=[num_nodes, EMBEDDING_SIZE])
 
-        # Definition of the cell computation.
         def hp_lstm_cell(cur_input, last_output, last_state, drop):
             if drop:
                 cur_input = tf.nn.dropout(cur_input, 0.8)
@@ -226,7 +232,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
                 output_gate = tf.nn.dropout(output_gate, 0.8)
             return output_gate, last_state
 
-        # Input data.
         hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in
                            range(batch_cnt_per_step)]
         # 归一化
@@ -238,12 +243,9 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
         hp_cnn_hypers = tf.reshape(tf.pack(hp_cnn_hypers), [hyper_cnt, EMBEDDING_SIZE])
 
         hp_final_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
-        # print(final_inputs)
-
         hp_train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in
                            range(batch_cnt_per_step)]
 
-        # Unrolled LSTM loop.
         hp_outputs = list()
         hp_output = hp_saved_output
         hp_state = hp_saved_state
@@ -254,17 +256,12 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
             hp_outputs.append(hp_output)
         #######################################################################################
 
-        # State saving
         with tf.control_dependencies([hp_saved_output.assign(hp_output),
                                       hp_saved_state.assign(hp_state)]):
-            # Classifier.
             hp_logits = tf.matmul(tf.concat(0, hp_outputs), hp_w)
-            print(hp_logits)
-            print(tf.concat(0, hp_train_labels))
-            # hp_loss = tf.split(0, batch_size * batch_cnt_per_step, hp_logits)[batch_size * batch_cnt_per_step - 1]
-            hp_loss = tf.reduce_mean(tf.square(hp_logits))
+            # hp_loss = tf.reduce_mean(tf.square(hp_logits))
+            hp_loss = tf.reduce_mean(hp_logits)
 
-        # Optimizer.
         hp_global_step = tf.Variable(0, trainable=False)
         hp_learning_rate = tf.train.exponential_decay(
             0.1, hp_global_step, 20, 0.1, staircase=True)
@@ -276,7 +273,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
         return_gradients = tf.pack(hp_gradients)
         hp_optimizer = hp_optimizer.apply_gradients(
             zip(hp_gradients, v), global_step=hp_global_step)
-        # Predictions, not softmax for no label
         hp_train_prediction = hp_logits
 
     hp_num_steps = 800
@@ -287,9 +283,11 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
 
     with tf.Session(graph=hp_graph) as session:
         tf.initialize_all_variables().run()
-        # train_batch.reset()
         print('Initialized')
         hp_mean_loss = 0
+        last_mean_loss = 0
+        hp_s = []
+        ret = False
         for step in range(hp_num_steps):
             if step == 0:
                 hp_input_s = init_input
@@ -300,7 +298,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
             f_features.append(hp_label_s[:, :20, :])
             # print("*" * 80)
             # print(hp_input_s)
-            # print("*" * 80)
             # print(hp_label_s)
             # print("*" * 80)
             hp_feed_dict = dict()
@@ -315,25 +312,33 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, hype
             _, hp_s, grads, l, lr, f_pred = session.run(
                 [hp_optimizer, hp_cnn_hypers, return_gradients, hp_loss, hp_learning_rate, hp_train_prediction],
                 feed_dict=hp_feed_dict)
-            # print("hp_train_prediction shape:")
-            # print(f_pred.shape)
             f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE)))
             hp_mean_loss += l
-            #     hp_predicts.append(f_prediction.reshape(batch_cnt_per_step * batch_size).tolist()[0])
             if step % hp_sum_freq == 0:
                 print('=' * 35 + 'gradients' + '=' * 35)
                 print(grads)
                 hp_loss_es.append(l)
-                # print(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist())
-                # print(label_s)
                 if step > 0:
                     hp_mean_loss /= hp_sum_freq
-                # The mean loss is an estimate of the loss over the last few batches.
                 print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
+                if step == 0:
+                    last_mean_loss = hp_mean_loss
+                    continue
+                if hp_mean_loss - last_mean_loss < last_mean_loss * 0.05:
+                    hp_diffs = list()
+                    for i in range(hyper_cnt):
+                        hp_diffs.append(math.fabs(hp_s[i][0] - hyper_s[i][0]))
+                    print (hp_diffs)
+                    for hp_diff, init_hp in hp_diffs, hyper_s:
+                        if hp_diff > init_hp * 0.05 and hp_diff > 1.0:
+                            ret = True
+                            break
+
+                last_mean_loss = hp_mean_loss
                 hp_mean_loss = 0
 
+                # todo if hp_mean_loss decrease and hypers change, break
                 print('hypers:')
                 print(hp_s)
                 print('=' * 80)
-
-        print(hp_loss_es)
+        return ret, hp_s

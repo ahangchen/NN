@@ -264,6 +264,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
     hp_loss_es = []
     f_labels = list()
     f_features = list()
+    last_mean_loss = 0
 
     with tf.Session(graph=hp_graph) as session:
         tf.initialize_all_variables().run()
@@ -304,17 +305,16 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 if step > 0:
                     hp_mean_loss /= hp_sum_freq
                 print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
-                last_mean_loss = hp_mean_loss
                 if step == 0:
+                    last_mean_loss = hp_mean_loss
                     continue
 
                 print('=' * 35 + 'hypers' + '=' * 35)
                 print(hp_s)
-
+                print('hp_mean_loss - last_mean_loss = %f' % (hp_mean_loss - last_mean_loss))
+                print('last_mean_loss = %f' % last_mean_loss)
                 # tf hp_mean_loss decrease and hypers change, break
                 if hp_mean_loss - last_mean_loss < last_mean_loss * 0.05:
-                    print('hp_mean_loss - last_mean_loss=%d' % (hp_mean_loss - last_mean_loss))
-                    print('last_mean_loss=%d' % last_mean_loss)
                     hp_diffs = list()
                     for i in range(hyper_cnt):
                         hp_diffs.append(math.fabs(hp_s[i][0] - init_hps[i][0]))
@@ -325,5 +325,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                         print('hp_diffs:')
                         print (hp_diffs)
                         break
+                last_mean_loss = hp_mean_loss
                 hp_mean_loss = 0
         return ret, hp_s

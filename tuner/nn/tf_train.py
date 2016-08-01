@@ -84,7 +84,11 @@ def train_cnn(hypers, cnn_loss):
         return END_TRAIN
 
 
-def better_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, cnn_loss, hyper_s):
+def better_hyper(cnn_loss, hyper_s):
+    ifcob_f = graph_vars['ifcob_f']
+    ifcom_f = graph_vars['ifcom_f']
+    ifcox_f = graph_vars['ifcox_f']
+    w_f = graph_vars['w_f']
     hp_cnt = len(hyper_s)
     init_hyper_s = [[hp] for hp in hyper_s]
     init_features, init_labels = loss2feature_labels(cnn_loss, hp_cnt)
@@ -717,11 +721,8 @@ def test():
         if ret:
             break
         print("end_train? %d" % ret)
-    ifcob_f = graph_vars['ifcob_f']
-    ifcom_f = graph_vars['ifcom_f']
-    ifcox_f = graph_vars['ifcox_f']
-    w_f = graph_vars['w_f']
-    better_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, raw_data, hypers)
+
+    better_hyper(raw_data, hypers)
 
 
 if __name__ == '__main__':

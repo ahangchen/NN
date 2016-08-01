@@ -13,8 +13,8 @@ def train(request):
     :param request:
     :return:
     """
-    cur_loss = request.POST.getlist('cur_loss')
-    hyper_json = request.POST['hyper_json']
+    cur_loss = request.POST.getlist('loss')
+    hyper_json = request.POST['hyper']
     hypers = json.loads(hyper_json)
     ret = train_cnn(hypers, cur_loss)
     if CONTINUE_TRAIN == ret:
@@ -30,4 +30,7 @@ def hyper(request):
     :param request:
     :return:
     """
-    return json_helper.dump_err_msg(NN_OK, better_hyper())
+    cur_loss = request.POST.getlist('cur_loss')
+    hyper_json = request.POST['hyper']
+    hypers = json.loads(hyper_json)
+    return json_helper.dump_err_msg(NN_OK, better_hyper(cur_loss, hypers))

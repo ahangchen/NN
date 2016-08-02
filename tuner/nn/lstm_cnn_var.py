@@ -169,13 +169,13 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
             if step > 0 and step % sum_freq * 10 == 0:
                 mean_loss /= sum_freq
                 # 唯有连续3次损失小于label的5%时才认为可停止
-                if mean_loss < np.mean(label_s) * 0.05:
+                if mean_loss < np.mean(label_s) * 0.10:
                     mean_loss_vary_cnt += 1
                 else:
                     mean_loss_vary_cnt -= 1
                 if mean_loss_vary_cnt >= 3:
                     ret = True
-                    print('mean loss < label_s * 5%')
+                    print('mean loss < label_s * 10%')
                 print(mean_loss)
                 print(np.mean(label_s))
                 print('Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))

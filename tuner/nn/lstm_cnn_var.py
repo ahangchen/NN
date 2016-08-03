@@ -392,7 +392,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 better_hp_cnt = 0
                 for i in range(hyper_cnt):
                     hp_diffs.append(math.fabs(hp_s[i][0] - init_hps[i][0]))
-                    if hp_diffs[i] > init_hps[i][0] * 0.50 and hp_diffs[i] > 1.0:
+                    if hp_diffs[i] > init_hps[i][0] * 0.20 and hp_diffs[i] > 1.0:
                         better_hp_cnt += 1
                         if better_hp_cnt >= hyper_cnt / 2:
                             ret = True

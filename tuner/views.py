@@ -21,7 +21,7 @@ def train(request):
     hypers = json.loads(hypers[0])
     # print(cur_loss)
     # print(hypers)
-    ret = train_cnn(hypers, cur_loss[0: 100])
+    ret = train_cnn(hypers, cur_loss[: 100])
     if CONTINUE_TRAIN == ret:
         return json_helper.dump_err_msg(CONTINUE_TRAIN, "haven't fit cnn loss")
     elif END_TRAIN == ret:
@@ -37,5 +37,7 @@ def hyper(request):
     :return:
     """
     cur_loss = request.POST.getlist('loss')
+    cur_loss = json.loads(cur_loss[0])
     hypers = request.POST.getlist('hyper')
+    hypers = json.loads(hypers[0])
     return json_helper.dump_err_msg(NN_OK, better_hyper(cur_loss, hypers))

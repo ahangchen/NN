@@ -71,15 +71,15 @@ def init_model():
             return output_gate, last_state
 
         # Input data.
-        train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in
-                        range(batch_cnt_per_step)]
-        cnn_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE])
+        train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE],
+                                       name='train_input{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
+        cnn_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE], name='cnn_hypers')
 
         final_inputs = [tf.concat(0, [data, cnn_hypers]) for data in train_inputs]
         # print(final_inputs)
 
-        train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in
-                        range(batch_cnt_per_step)]
+        train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE],
+                                       name='train_labels{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
 
         # Unrolled LSTM loop.
         outputs = list()
@@ -228,7 +228,6 @@ def n_fit_cnn_loss(fit_cnt, n_input_s, n_label_s, hyper_s,
         mean_loss = 0
         # prepare and feed train data
         for k in range(fit_cnt):
-
             feed_dict = dict()
             for i in range(batch_cnt_per_step):
                 feed_dict[train_inputs[i]] = n_input_s[k][i]
@@ -277,13 +276,13 @@ def n_fit_cnn_loss(fit_cnt, n_input_s, n_label_s, hyper_s,
 def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init_hps):
     hp_graph = tf.Graph()
     with hp_graph.as_default():
-        hp_ifcox = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, num_nodes * 4])
-        hp_ifcom = tf.placeholder(tf.float32, shape=[num_nodes, num_nodes * 4])
-        hp_ifcob = tf.placeholder(tf.float32, shape=[1, num_nodes * 4])
+        hp_ifcox = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, num_nodes * 4], name='hp_ifcox')
+        hp_ifcom = tf.placeholder(tf.float32, shape=[num_nodes, num_nodes * 4], name='hp_ifcom')
+        hp_ifcob = tf.placeholder(tf.float32, shape=[1, num_nodes * 4], name='hp_ifcob')
 
         hp_saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
         hp_saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
-        hp_w = tf.placeholder(tf.float32, shape=[num_nodes, EMBEDDING_SIZE])
+        hp_w = tf.placeholder(tf.float32, shape=[num_nodes, EMBEDDING_SIZE], name='hp_w')
 
         def hp_lstm_cell(cur_input, last_output, last_state, drop):
             if drop:
@@ -299,16 +298,16 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 output_gate = tf.nn.dropout(output_gate, 0.8)
             return output_gate, last_state
 
-        hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE]) for _ in
-                           range(batch_cnt_per_step)]
+        hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE],
+                                          name='hp_train_inputs{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
         # 归一化
         hp_cnn_raw_hypers = [tf.Variable(float(init_hps[i][0]) / 10.0).value() for i in range(hyper_cnt)]
         hp_cnn_hypers = [tf.mul(hp_cnn_hyper, 10.0) for hp_cnn_hyper in hp_cnn_raw_hypers]
         hp_cnn_hypers = tf.reshape(tf.pack(hp_cnn_hypers), [hyper_cnt, EMBEDDING_SIZE])
 
         hp_final_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
-        hp_train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE]) for _ in
-                           range(batch_cnt_per_step)]
+        hp_train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE],
+                                          name='hp_train_labels{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
 
         hp_outputs = list()
         hp_output = hp_saved_output
@@ -378,6 +377,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 feed_dict=hp_feed_dict)
             f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE)))
             hp_mean_loss += l
+            mean_loss_collect.append(l)
             if step % hp_sum_freq == 0:
                 # print('=' * 35 + 'gradients' + '=' * 35)
                 # print(grads)
@@ -385,7 +385,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 if step > 0:
                     hp_mean_loss /= hp_sum_freq
                 print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
-                mean_loss_collect.append(hp_mean_loss)
                 print('=' * 35 + 'hypers' + '=' * 35)
                 print(hp_s)
                 hp_diffs = list()

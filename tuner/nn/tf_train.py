@@ -776,7 +776,7 @@ raw_data = [2.534164, 2.8933029, 2.5303123, 2.7081528, 3.368371, 2.6903017, 2.41
 
 
 def test():
-    hypers = [16, 5, 16, 64]
+    hypers = [16, 5, 3, 16, 64]
     ret = CONTINUE_TRAIN
     for i in range(100):
         ret = train_cnn(hypers, raw_data[i: i + 100])

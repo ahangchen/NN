@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from tuner.nn.tf_train import train_cnn, CONTINUE_TRAIN, END_TRAIN, NN_OK, better_hyper
 from tuner.util import json_helper
 
+
 @csrf_exempt
 def train(request):
     """

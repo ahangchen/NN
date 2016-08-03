@@ -58,13 +58,14 @@ def init_model():
         def lstm_cell(cur_input, last_output, last_state, drop):
             if drop:
                 cur_input = tf.nn.dropout(cur_input, 0.8)
-            ifco_gates = tf.matmul(cur_input, ifcox) + tf.matmul(last_output, ifcom) + ifcob
-            input_gate = tf.sigmoid(_slice(ifco_gates, 0, num_nodes))
-            forget_gate = tf.sigmoid(_slice(ifco_gates, 1, num_nodes))
-            update = _slice(ifco_gates, 2, num_nodes)
-            last_state = forget_gate * last_state + input_gate * tf.tanh(update)
-            output_gate = tf.sigmoid(_slice(ifco_gates, 3, num_nodes))
-            output_gate *= tf.tanh(last_state)
+            with tf.device('/cpu:0'):
+                ifco_gates = tf.matmul(cur_input, ifcox) + tf.matmul(last_output, ifcom) + ifcob
+                input_gate = tf.sigmoid(_slice(ifco_gates, 0, num_nodes))
+                forget_gate = tf.sigmoid(_slice(ifco_gates, 1, num_nodes))
+                update = _slice(ifco_gates, 2, num_nodes)
+                last_state = forget_gate * last_state + input_gate * tf.tanh(update)
+                output_gate = tf.sigmoid(_slice(ifco_gates, 3, num_nodes))
+                output_gate *= tf.tanh(last_state)
             if drop:
                 output_gate = tf.nn.dropout(output_gate, 0.8)
             return output_gate, last_state
@@ -327,7 +328,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
 
         hp_global_step = tf.Variable(0, trainable=False)
         hp_learning_rate = tf.train.exponential_decay(
-            0.5, hp_global_step, 100, 0.9, staircase=True)
+            0.1, hp_global_step, 200, 0.9, staircase=True)
 
         hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
         hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))
@@ -378,8 +379,8 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
             f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size, EMBEDDING_SIZE)))
             hp_mean_loss += l
             if step % hp_sum_freq == 0:
-                print('=' * 35 + 'gradients' + '=' * 35)
-                print(grads)
+                # print('=' * 35 + 'gradients' + '=' * 35)
+                # print(grads)
                 hp_loss_es.append(l)
                 if step > 0:
                     hp_mean_loss /= hp_sum_freq
@@ -387,7 +388,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 mean_loss_collect.append(hp_mean_loss)
                 print('=' * 35 + 'hypers' + '=' * 35)
                 print(hp_s)
-                # tf hp_mean_loss decrease and hypers change, break
                 hp_diffs = list()
                 better_hp_cnt = 0
                 for i in range(hyper_cnt):
@@ -397,6 +397,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                         if better_hp_cnt >= hyper_cnt / 2:
                             ret = True
                             break
+
                 if ret:
                     print('hp_diffs:')
                     print (hp_diffs)
@@ -404,4 +405,4 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
             hp_mean_loss = 0
         for mean_l in mean_loss_collect:
             print(mean_l)
-    return ret, hp_s
+    return ret, hp_s.tolist()

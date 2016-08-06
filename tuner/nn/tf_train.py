@@ -22,7 +22,7 @@ def loss2feature_labels(cnn_loss, hyper_cnt):
     hyper_zeros = [0 for _ in range(hyper_cnt)]
     raw_labels = list()
     for i in range(batch_cnt_per_step):
-        piece = cnn_loss[i + 1: i + input_batch_size + 1]
+        piece = cnn_loss[i + 10: i + input_batch_size + 10]
         piece.extend(hyper_zeros)
         raw_labels.append(piece)
     # print(np.array(raw_labels).shape)

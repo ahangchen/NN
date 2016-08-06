@@ -43,15 +43,15 @@ def init_model():
     with graph.as_default():
         # Parameters:
         # Input, Forget, Memory, Output gate: input, previous output, and bias.
-        ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], -0.1, 1.0))
-        ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], -0.1, 1.0))
+        ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], stddev=0.1))
+        ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], stddev=0.1))
         ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]))
 
         # Variables saving state across unrollings.
         saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
         saved_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
         # Classifier weights and biases.
-        w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], -0.1, 1.0))
+        w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], stddev=0.1))
         b = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE]))
 
         # Definition of the cell computation.
@@ -97,14 +97,14 @@ def init_model():
                                       saved_state.assign(state)]):
             # Classifier.
             logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
-            print(logits)
-            print(tf.concat(0, train_labels))
+            # print(logits)
+            # print(tf.concat(0, train_labels))
             loss = tf.reduce_mean(tf.sqrt(tf.square(tf.sub(logits, tf.concat(0, train_labels)))))
 
         # Optimizer.
         global_step = tf.Variable(0)
         learning_rate = tf.train.exponential_decay(
-            1.0, global_step, 20, 0.6, staircase=True)
+            1.0, global_step, 50, 0.8, staircase=True)
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
         gradients, v = zip(*optimizer.compute_gradients(loss))
         gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -164,6 +164,8 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
         _, l, predictions, lr = fit_cnn_ses.run([optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
         mean_loss += l
         # 每次只有第一个loss是有意义的
+        # print('label_s')
+        # print(label_s.tolist())
         labels.append(label_s.reshape(batch_cnt_per_step * batch_size).tolist()[0])
         predicts.append(predictions.reshape(batch_cnt_per_step * batch_size).tolist()[0])
         if step % sum_freq == 0:
@@ -173,7 +175,7 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
                 if mean_loss < np.mean(label_s) * 0.10:
                     mean_loss_vary_cnt += 1
                 else:
-                    mean_loss_vary_cnt -= 1
+                    mean_loss_vary_cnt = 0
                 if mean_loss_vary_cnt >= 3:
                     ret = True
                     print('mean loss < label_s * 10%')
@@ -301,9 +303,10 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
         hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE],
                                           name='hp_train_inputs{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
         # 归一化
-        hp_cnn_raw_hypers = [tf.Variable(float(init_hps[i][0]) / 10.0).value() for i in range(hyper_cnt)]
-        hp_cnn_hypers = [tf.mul(hp_cnn_hyper, 10.0) for hp_cnn_hyper in hp_cnn_raw_hypers]
-        hp_cnn_hypers = tf.reshape(tf.pack(hp_cnn_hypers), [hyper_cnt, EMBEDDING_SIZE])
+        # hp_cnn_raw_hypers = [tf.Variable(float(init_hps[i][0]) / 10.0).value() for i in range(hyper_cnt)]
+        # hp_cnn_hypers = [tf.mul(hp_cnn_hyper, 10.0) for hp_cnn_hyper in hp_cnn_raw_hypers]
+        hp_cnn_raw_hypers = [tf.Variable(init_hps[i][0]).value() for i in range(hyper_cnt)]
+        hp_cnn_hypers = tf.reshape(tf.pack(hp_cnn_raw_hypers), [hyper_cnt, EMBEDDING_SIZE])
 
         hp_final_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
         hp_train_labels = [tf.placeholder(tf.float32, shape=[batch_size, EMBEDDING_SIZE],
@@ -327,7 +330,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
 
         hp_global_step = tf.Variable(0, trainable=False)
         hp_learning_rate = tf.train.exponential_decay(
-            0.1, hp_global_step, 200, 0.9, staircase=True)
+            0.01, hp_global_step, 200, 0.9, staircase=True)
 
         hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
         hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))
@@ -391,7 +394,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                 better_hp_cnt = 0
                 for i in range(hyper_cnt):
                     hp_diffs.append(math.fabs(hp_s[i][0] - init_hps[i][0]))
-                    if hp_diffs[i] > init_hps[i][0] * 0.20 and hp_diffs[i] > 1.0:
+                    if hp_diffs[i] > init_hps[i][0] * 0.20 and hp_diffs[i] > 0.01:
                         better_hp_cnt += 1
                         if better_hp_cnt >= hyper_cnt / 2:
                             ret = True
@@ -402,6 +405,6 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                     print (hp_diffs)
                     break
             hp_mean_loss = 0
-        for mean_l in mean_loss_collect:
-            print(mean_l)
+        # for mean_l in mean_loss_collect:
+        #     print(mean_l)
     return ret, hp_s.tolist()

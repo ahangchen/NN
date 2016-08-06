@@ -22,7 +22,7 @@ def train(request):
     hypers = json.loads(hypers[0])
     # print(cur_loss)
     # print(hypers)
-    ret = train_cnn(hypers, cur_loss[: 100])
+    ret = train_cnn(hypers, cur_loss[: 110])
     if CONTINUE_TRAIN == ret:
         return json_helper.dump_err_msg(CONTINUE_TRAIN, "haven't fit cnn loss")
     elif END_TRAIN == ret:

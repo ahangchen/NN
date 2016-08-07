@@ -20,9 +20,8 @@ def train(request):
     cur_loss = json.loads(cur_loss[0])
     hypers = request.POST.getlist('hyper')
     hypers = json.loads(hypers[0])
-    # print(cur_loss)
-    # print(hypers)
-    ret = train_cnn(hypers, cur_loss[: 110])
+    reset = int(request.POST['reset'])
+    ret = train_cnn(reset, hypers, cur_loss[: 110])
     if CONTINUE_TRAIN == ret:
         return json_helper.dump_err_msg(CONTINUE_TRAIN, "haven't fit cnn loss")
     elif END_TRAIN == ret:

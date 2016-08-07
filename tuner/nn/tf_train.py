@@ -16,17 +16,11 @@ graph_vars = dict()
 
 def loss2feature_labels(cnn_loss, hyper_cnt):
     # create feature and label from cnn_loss
-    feature_s = np.array(cnn_loss[: batch_cnt_per_step * input_batch_size * EMBEDDING_SIZE]).reshape(
+    print(np.array(cnn_loss[: - 1]).shape)
+    feature_s = np.array(cnn_loss[: - 1]).reshape(
         [batch_cnt_per_step, input_batch_size, EMBEDDING_SIZE])
-
-    hyper_zeros = [0 for _ in range(hyper_cnt)]
-    raw_labels = list()
-    for i in range(batch_cnt_per_step):
-        piece = cnn_loss[i + 1: i + input_batch_size + 1]
-        piece.extend(hyper_zeros)
-        raw_labels.append(piece)
-    # print(np.array(raw_labels).shape)
-    label_s = np.array(raw_labels).reshape([batch_cnt_per_step, input_batch_size + hyper_cnt, EMBEDDING_SIZE])
+    label_s = np.array(cnn_loss[1:]).reshape(
+        [batch_cnt_per_step, input_batch_size, EMBEDDING_SIZE])
     return feature_s, label_s
 
 
@@ -717,13 +711,15 @@ raw_data = [2.534164, 2.8933029, 2.5303123, 2.7081528, 3.368371, 2.6903017, 2.41
 def test():
     hypers = [16, 5, 3, 16, 64]
     ret = CONTINUE_TRAIN
+    cur_idx = 0
     for i in range(100):
-        ret = train_cnn(hypers, raw_data[i: i + 100])
+        ret = train_cnn(0, hypers, raw_data[i: i + 101])
+        cur_idx = i
         if ret == END_TRAIN:
             break
         print("end_train? %d" % ret)
     if ret == END_TRAIN:
-        better_hyper(raw_data, hypers)
+        better_hyper(raw_data[cur_idx: cur_idx + 101], [float(hp) for hp in hypers])
 
 if __name__ == '__main__':
     test()

@@ -202,6 +202,7 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
             file_helper.write(LINE_FILE_PATH, '=' * 80)
             del labels[:]
             del predicts[:]
+            file_helper.write(LINE_FILE_PATH, str(hyper_s.reshape([hyper_cnt]).tolist()))
             ifcob_f, ifcom_f, ifcox_f, w_f = fit_cnn_ses.run([ifcob, ifcom, ifcox, w], feed_dict=feed_dict)
             return ifcob_f, ifcom_f, ifcox_f, w_f
         else:
@@ -340,7 +341,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, init_input, init_label, init
                     break
             hp_mean_loss = 0
     final_hps = hp_s.reshape([hyper_cnt]).tolist()
-    file_helper.write(LINE_FILE_PATH, str(final_hps))
+    # file_helper.write(LINE_FILE_PATH, str(final_hps))
     return ret, final_hps
 
 

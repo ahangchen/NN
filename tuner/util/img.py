@@ -58,6 +58,7 @@ def avg_line():
                 cur_sum += float(exp_data)
                 cur_cnt += 1
     plt.plot(avg_s)
+    plt.savefig('avg_loss_change.jpg')
     plt.show()
 
 if __name__ == '__main__':

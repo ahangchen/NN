@@ -270,11 +270,18 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
                                       hp_saved_state.assign(hp_state)]):
             hp_logits = tf.nn.xw_plus_b(tf.concat(0, hp_outputs), hp_w, hp_b)
             # hp_loss = tf.reduce_mean(tf.square(hp_logits))
-            hp_loss = tf.reduce_mean(hp_logits)
+            # for the max change between losses
+            hp_loss = tf.reduce_mean(tf.sub(hp_logits,
+                                            tf.reshape(
+                                                tf.concat(
+                                                    0, hp_final_inputs
+                                                ),
+                                                [batch_cnt_per_step * (batch_size - hyper_cnt), EMBEDDING_SIZE]
+                                            )))
 
         hp_global_step = tf.Variable(0, trainable=False)
         hp_learning_rate = tf.train.exponential_decay(
-            0.01, hp_global_step, 200, 0.9, staircase=True)
+            0.001, hp_global_step, 100, 0.9, staircase=True)
 
         hp_optimizer = tf.train.GradientDescentOptimizer(hp_learning_rate)
         hp_gradients, v = zip(*hp_optimizer.compute_gradients(hp_loss))

@@ -6,7 +6,7 @@ import os
 import math
 
 # Simple LSTM Model.
-from tuner.ctrl.const_define import EMBEDDING_SIZE, batch_cnt_per_step, LINE_FILE_PATH
+from tuner.ctrl.const_define import EMBEDDING_SIZE, batch_cnt_per_step, LINE_FILE_PATH, HP_FILE_PATH
 from tuner.util import file_helper
 
 num_nodes = 64
@@ -44,15 +44,15 @@ def init_model():
     with graph.as_default():
         # Parameters:
         # Input, Forget, Memory, Output gate: input, previous output, and bias.
-        ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], mean=-0.1, stddev=0.1))
-        ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], mean=-0.1, stddev=0.1))
+        ifcox = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE, num_nodes * 4], mean=0.0, stddev=0.1))
+        ifcom = tf.Variable(tf.truncated_normal([num_nodes, num_nodes * 4], mean=0.0, stddev=0.1))
         ifcob = tf.Variable(tf.zeros([1, num_nodes * 4]))
 
         # Variables saving state across unrollings.
         saved_output = tf.Variable(tf.zeros([batch_size - hyper_cnt, num_nodes]), trainable=False)
         saved_state = tf.Variable(tf.zeros([batch_size - hyper_cnt, num_nodes]), trainable=False)
         # Classifier weights and biases.
-        w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], mean=-0.1, stddev=0.1))
+        w = tf.Variable(tf.truncated_normal([num_nodes, EMBEDDING_SIZE], mean=0.0, stddev=0.1))
         b = tf.Variable(tf.truncated_normal([EMBEDDING_SIZE]))
 
         # Definition of the cell computation.
@@ -112,6 +112,7 @@ def init_model():
             0.5, global_step, 50, 0.8, staircase=True)
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
         gradients, v = zip(*optimizer.compute_gradients(loss))
+        print(v[0])
         gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
         optimizer = optimizer.apply_gradients(
             zip(gradients, v), global_step=global_step)
@@ -149,7 +150,8 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
     global mean_loss_vary_cnt
     if reset == 1:
         step = 0
-    ret = False
+    # todo only for test
+    ret = True
     with tf.Session(graph=graph) as fit_cnn_ses:
         if os.path.exists(save_path):
             # Restore variables from disk.
@@ -176,11 +178,12 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
         # print(label_s.tolist())
         labels.append(label_s.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist()[0])
         predicts.append(predictions.reshape(batch_cnt_per_step * (batch_size - hyper_cnt)).tolist()[0])
+        # print('step: %d' % step)
         if step % sum_freq == 0:
-            if step > 0 and step % sum_freq * 10 == 0:
+            if step > 0 and step % (sum_freq * 10) == 0:
                 mean_loss /= sum_freq
                 # 唯有连续3次损失小于label的5%时才认为可停止
-                if mean_loss < np.mean(label_s) * 0.10:
+                if mean_loss < np.mean(label_s) * 0.10 and mean_loss < np.mean(predictions) * 0.10:
                     mean_loss_vary_cnt += 1
                 else:
                     mean_loss_vary_cnt = 0
@@ -199,12 +202,12 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
         if ret:
             for label in labels:
                 file_helper.write(LINE_FILE_PATH, str(label))
-                print(label)
+                # print(label)
             file_helper.write(LINE_FILE_PATH, '=' * 80)
-            print('=' * 80)
+            # print('=' * 80)
             for predict in predicts:
                 file_helper.write(LINE_FILE_PATH, str(predict))
-                print(predict)
+                # print(predict)
             file_helper.write(LINE_FILE_PATH, '=' * 80)
             del labels[:]
             del predicts[:]
@@ -290,8 +293,8 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
         hp_optimizer = hp_optimizer.apply_gradients(
             zip(hp_gradients, v), global_step=hp_global_step)
         hp_train_prediction = hp_logits
-
-    hp_num_steps = 8000
+    # todo for test
+    hp_num_steps = 1
     hp_sum_freq = 50
     hp_loss_es = []
     f_labels = list()
@@ -300,7 +303,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
 
     with tf.Session(graph=hp_graph) as session:
         tf.initialize_all_variables().run()
-        print('Initialized')
+        # print('Initialized')
         hp_mean_loss = 0
         hp_s = []
         ret = False
@@ -334,19 +337,22 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
             f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size - hyper_cnt, EMBEDDING_SIZE)))
             hp_mean_loss += l
             mean_loss_collect.append(l)
+            print('grads:')
+            print(grads)
             if step % hp_sum_freq == 0:
                 # print('=' * 35 + 'gradients' + '=' * 35)
-                # print(grads)
                 hp_loss_es.append(l)
                 if step > 0:
                     hp_mean_loss /= hp_sum_freq
-                print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
-                print(hp_s)
+                # print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
+                # print(hp_s)
                 hp_diffs = list()
                 better_hp_cnt = 0
                 for i in range(hyper_cnt):
                     hp_diffs.append(math.fabs(hp_s[i][0] - init_hps[i][0]))
                     if hp_diffs[i] > init_hps[i][0] * 0.20 and hp_diffs[i] > 0.01:
+                        print('init_hps[i][0]: ')
+                        print(init_hps[i][0])
                         better_hp_cnt += 1
                         if better_hp_cnt >= hyper_cnt / 2:
                             ret = True
@@ -356,10 +362,10 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
                             break
 
                 if ret:
-                    print('hp_diffs:')
-                    print (hp_diffs)
+                    # print('hp_diffs:')
+                    # print (hp_diffs)
                     break
             hp_mean_loss = 0
     final_hps = hp_s.reshape([hyper_cnt]).tolist()
-    # file_helper.write(LINE_FILE_PATH, str(final_hps))
+    file_helper.write(HP_FILE_PATH, str(final_hps))
     return ret, final_hps

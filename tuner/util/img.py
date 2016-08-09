@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import re
 import seaborn
 
+from tuner.ctrl.const_define import HP_FILE_PATH, LINE_FILE_PATH
 from tuner.util import file_helper
 
 
@@ -15,7 +16,7 @@ def draw(data_s, label_n):
 
 
 def mark():
-    exp_file = file_helper.read2mem('../../line')
+    exp_file = file_helper.read2mem('../../' + LINE_FILE_PATH)
     exp_datas = exp_file.split('\n')
     cur_line = list()
     line_cnt = 0
@@ -37,7 +38,7 @@ def mark():
 
 
 def avg_line():
-    exp_file = file_helper.read2mem('../../line')
+    exp_file = file_helper.read2mem('../../' + LINE_FILE_PATH)
     exp_datas = exp_file.split('\n')
     cur_sum = 0
     cur_cnt = 0
@@ -61,6 +62,35 @@ def avg_line():
     plt.savefig('avg_loss_change.jpg')
     plt.show()
 
+
+def hp_line():
+    batch_size_s = list()
+    depth_s = list()
+    num_hidden_s = list()
+    layer_cnt_s = list()
+    patch_size_s = list()
+    exp_file = file_helper.read2mem('../../' + HP_FILE_PATH)
+    print(exp_file)
+    exp_datas = exp_file.split('\n')
+    for exp_data in exp_datas:
+        hps = exp_data[1: -1].split(', ')
+        if re.match("^\d+?\.\d+?$", hps[0]) is None:
+            continue
+        batch_size_s.append(float(hps[0]))
+        depth_s.append(float(hps[1]))
+        num_hidden_s.append(float(hps[2]))
+        layer_cnt_s.append(float(hps[3]))
+        patch_size_s.append(float(hps[4]))
+    batch_pl, = plt.plot(batch_size_s, label='batch_size')
+    depth_pl, = plt.plot(depth_s, label='depth')
+    num_pl, = plt.plot(num_hidden_s, label='num_hidden')
+    layer_pl, = plt.plot(layer_cnt_s, label='layer_cnt')
+    patch_pl, = plt.plot(patch_size_s, label='patch_size')
+    plt.legend(handles=[batch_pl, depth_pl, num_pl, layer_pl, patch_pl])
+    plt.savefig('hp_change.jpg')
+    plt.show()
+
 if __name__ == '__main__':
     mark()
     avg_line()
+    hp_line()

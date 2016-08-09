@@ -16,11 +16,11 @@ graph_vars = dict()
 
 def loss2feature_labels(cnn_loss, hyper_cnt):
     # create feature and label from cnn_loss
-    # print(len(cnn_loss))
+    print(len(cnn_loss))
     # print(np.array(cnn_loss[: - 1]).shape)
-    feature_s = np.array(cnn_loss[: - 1]).reshape(
+    feature_s = np.array(cnn_loss[: 100]).reshape(
         [batch_cnt_per_step, input_batch_size, EMBEDDING_SIZE])
-    label_s = np.array(cnn_loss[1:]).reshape(
+    label_s = np.array(cnn_loss[20: 120]).reshape(
         [batch_cnt_per_step, input_batch_size, EMBEDDING_SIZE])
     return feature_s, label_s
 

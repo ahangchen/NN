@@ -32,7 +32,7 @@ def train_cnn(reset, hypers, cnn_loss):
         saver = graph_dict['saver']
         train_inputs = graph_dict['train_inputs']
         train_labels = graph_dict['train_labels']
-        cnn_hypers = graph_dict['cnn_hypers']
+        ph_hypers = graph_dict['ph_hypers']
         optimizer = graph_dict['optimizer']
         loss = graph_dict['loss']
         train_prediction = graph_dict['train_prediction']
@@ -45,13 +45,13 @@ def train_cnn(reset, hypers, cnn_loss):
         wi = graph_dict['wi']
         bi = graph_dict['bi']
     else:
-        graph, saver, train_inputs, train_labels, cnn_hypers, optimizer, loss, train_prediction, learning_rate, \
+        graph, saver, train_inputs, train_labels, ph_hypers, optimizer, loss, train_prediction, learning_rate, \
         ifcob, ifcom, ifcox, w, b, wi, bi = init_graph(hypers, input_batch_size)
         graph_dict['graph'] = graph
         graph_dict['saver'] = saver
         graph_dict['train_inputs'] = train_inputs
         graph_dict['train_labels'] = train_labels
-        graph_dict['cnn_hypers'] = cnn_hypers
+        graph_dict['ph_hypers'] = ph_hypers
         graph_dict['optimizer'] = optimizer
         graph_dict['loss'] = loss
         graph_dict['train_prediction'] = train_prediction
@@ -70,7 +70,7 @@ def train_cnn(reset, hypers, cnn_loss):
     # create np hyper from hypers
     np_hyper_s = np.array(hypers).reshape([hyper_cnt, EMBEDDING_SIZE])
     ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f = fit_cnn_loss(feature_s, label_s, np_hyper_s, graph, saver,
-                                                  train_inputs, train_labels, cnn_hypers, optimizer, loss,
+                                                  train_inputs, train_labels, ph_hypers, optimizer, loss,
                                                   train_prediction, learning_rate,
                                                   ifcob, ifcom, ifcox, w, b, wi, bi, reset)
     if ifcob_f is None:

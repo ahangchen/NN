@@ -74,9 +74,9 @@ def init_model():
         # Input data.
         train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE],
                                        name='train_input{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
-        cnn_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE], name='cnn_hypers')
+        ph_hypers = tf.placeholder(tf.float32, shape=[hyper_cnt, EMBEDDING_SIZE], name='ph_hypers')
 
-        concat_inputs = [tf.concat(0, [data, cnn_hypers]) for data in train_inputs]
+        concat_inputs = [tf.concat(0, [data, ph_hypers]) for data in train_inputs]
         wi = tf.Variable(tf.truncated_normal([batch_size, batch_size - hyper_cnt], mean=-0.1, stddev=0.1))
         bi = tf.Variable(tf.truncated_normal([batch_size - hyper_cnt]))
         final_inputs = tf.nn.xw_plus_b(tf.reshape(tf.concat(0, concat_inputs), [batch_cnt_per_step, batch_size]), wi,
@@ -120,7 +120,7 @@ def init_model():
         # Predictions, not softmax for no label
         train_prediction = logits
         saver = tf.train.Saver()
-    return graph, saver, train_inputs, train_labels, cnn_hypers, optimizer, loss, train_prediction, learning_rate, \
+    return graph, saver, train_inputs, train_labels, ph_hypers, optimizer, loss, train_prediction, learning_rate, \
            ifcob, ifcom, ifcox, w, b, wi, bi
 
 
@@ -135,7 +135,7 @@ mean_loss_vary_cnt = 0
 # 每次fit一个step会比较慢
 def fit_cnn_loss(input_s, label_s, hyper_s,
                  graph, saver,
-                 train_inputs, train_labels, cnn_hypers,
+                 train_inputs, train_labels, ph_hypers,
                  optimizer, loss, train_prediction, learning_rate,
                  ifcob, ifcom, ifcox, w, b, wi, bi,
                  reset=False):
@@ -169,7 +169,7 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
             feed_dict[train_inputs[i]] = input_s[i]
         for i in range(batch_cnt_per_step):
             feed_dict[train_labels[i]] = label_s[i]
-        feed_dict[cnn_hypers] = hyper_s
+        feed_dict[ph_hypers] = hyper_s
         # train
         _, l, predictions, lr = fit_cnn_ses.run([optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
         mean_loss += l
@@ -218,7 +218,7 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
             return None, None, None, None, None, None, None
 
 
-def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input, init_label, init_hps):
+def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input, init_label, var_init_hypers):
     hp_graph = tf.Graph()
     with hp_graph.as_default():
         hp_ifcox = tf.placeholder(tf.float32, shape=[EMBEDDING_SIZE, num_nodes * 4], name='hp_ifcox')
@@ -246,10 +246,10 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
 
         hp_train_inputs = [tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt, EMBEDDING_SIZE],
                                           name='hp_train_inputs{i}'.format(i=i)) for i in range(batch_cnt_per_step)]
-        hp_cnn_raw_hypers = [tf.Variable(init_hps[i][0]).value() for i in range(hyper_cnt)]
-        hp_cnn_hypers = tf.reshape(tf.pack(hp_cnn_raw_hypers), [hyper_cnt, EMBEDDING_SIZE])
+        pack_var_hypers = [tf.Variable(var_init_hypers[i][0]).value() for i in range(hyper_cnt)]
+        tf_hypers = tf.reshape(tf.pack(pack_var_hypers), [hyper_cnt, EMBEDDING_SIZE])
 
-        hp_concat_inputs = [tf.concat(0, [data, hp_cnn_hypers]) for data in hp_train_inputs]
+        hp_concat_inputs = [tf.concat(0, [data, tf_hypers]) for data in hp_train_inputs]
         hp_wi = tf.placeholder(tf.float32, shape=[batch_size, batch_size - hyper_cnt], name='hp_wi')
         hp_bi = tf.placeholder(tf.float32, shape=[batch_size - hyper_cnt], name='hp_bi')
         hp_final_inputs = tf.nn.xw_plus_b(tf.reshape(tf.concat(0, hp_concat_inputs), [batch_cnt_per_step, batch_size]),
@@ -332,7 +332,7 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
             hp_feed_dict[hp_wi] = wi_f
             hp_feed_dict[hp_bi] = bi_f
             _, hp_s, grads, l, lr, f_pred = session.run(
-                [hp_optimizer, hp_cnn_hypers, return_gradients, hp_loss, hp_learning_rate, hp_train_prediction],
+                [hp_optimizer, tf_hypers, return_gradients, hp_loss, hp_learning_rate, hp_train_prediction],
                 feed_dict=hp_feed_dict)
             f_labels.append(f_pred.reshape((batch_cnt_per_step, batch_size - hyper_cnt, EMBEDDING_SIZE)))
             hp_mean_loss += l
@@ -349,10 +349,10 @@ def train_cnn_hyper(ifcob_f, ifcom_f, ifcox_f, w_f, b_f, wi_f, bi_f, init_input,
                 hp_diffs = list()
                 better_hp_cnt = 0
                 for i in range(hyper_cnt):
-                    hp_diffs.append(math.fabs(hp_s[i][0] - init_hps[i][0]))
-                    if hp_diffs[i] > init_hps[i][0] * 0.20 and hp_diffs[i] > 0.01:
-                        print('init_hps[i][0]: ')
-                        print(init_hps[i][0])
+                    hp_diffs.append(math.fabs(hp_s[i][0] - var_init_hypers[i][0]))
+                    if hp_diffs[i] > var_init_hypers[i][0] * 0.20 and hp_diffs[i] > 0.01:
+                        print('var_init_hypers[i][0]: ')
+                        print(var_init_hypers[i][0])
                         better_hp_cnt += 1
                         if better_hp_cnt >= hyper_cnt / 2:
                             ret = True

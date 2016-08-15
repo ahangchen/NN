@@ -1,4 +1,5 @@
 # coding=utf-8
+import random
 
 import numpy as np
 import tensorflow as tf
@@ -35,6 +36,11 @@ def init_graph(hypers, cnn_batch_size):
 
 def _slice(_x, n, dim):
     return _x[:, n * dim:(n + 1) * dim]
+
+
+def norm(params):
+    norm_list = [(param / 10 + 1) * 10.0 for param in params]
+    return norm_list
 
 
 def init_model():
@@ -83,7 +89,7 @@ def init_model():
         tf_init_hypers = [var_init_hyper.assign(tf.reshape(cnn_raw_hypers[i], shape=()))
                           for i, var_init_hyper in enumerate(var_init_hypers)]
         var_hypers = [tf.Variable(init_hp, name='hp_%d' % i) for i, init_hp in enumerate(tf_init_hypers)]
-
+        # 用于每回合的重置
         var_reset_hypers = list()
         for var in var_init_hypers:
             var_reset_hypers.append(var)
@@ -130,6 +136,10 @@ def init_model():
         global_step = tf.Variable(0, trainable=False)
         learning_rate = tf.train.exponential_decay(
             0.5, global_step, 50, 0.8, staircase=True)
+        # 分开两组学习率
+        hp_step = tf.Variable(0, trainable=False)
+        hp_learning_rate = tf.train.exponential_decay(
+            0.5, hp_step, 50, 0.8, staircase=True)
 
         var_s = tf.trainable_variables()
         print(var_s)
@@ -148,12 +158,13 @@ def init_model():
         # to train hp or not
         optimizer_fit = optimizer_fit.apply_gradients(zip(gradients_fit, return_v_fit), global_step=global_step)
 
-        optimizer_hp = tf.train.GradientDescentOptimizer(learning_rate)
+        # keep learning when modify hypers
+        optimizer_hp = tf.train.GradientDescentOptimizer(hp_learning_rate)
         gradients_hp, return_v_hp = zip(*optimizer_hp.compute_gradients(loss, var_list=v_hp))
         gradients_hp, _ = tf.clip_by_global_norm(gradients_hp, 1.25)
 
         def hp_opt():
-            return optimizer_hp.apply_gradients(zip(gradients_hp, return_v_hp), global_step=global_step)
+            return optimizer_hp.apply_gradients(zip(gradients_hp, return_v_hp), global_step=hp_step)
 
         optimizer = tf.cond(is_fit, lambda: optimizer_fit, hp_opt)
         # Predictions, not softmax for no label
@@ -182,6 +193,14 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
                  reset=False, train_hyper=False):
     global hyper_cnt
     global batch_size
+    norm_list = norm(hyper_s)
+    print('reset?')
+    print(reset)
+    print('hypers before norm:')
+    print(hyper_s)
+    hyper_s = [hyper / norm_list[i] for i, hyper in enumerate(hyper_s)]
+    print('hypers after norm:')
+    print(hyper_s)
     hyper_cnt = len(hyper_s)
     global step
     global save_path
@@ -221,10 +240,12 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
         feed_dict[ph_hypers] = hyper_s
         # print(feed_dict)
         # train
-        grads, _, l, predictions, lr, hyper_f = fit_cnn_ses.run(
-            [gradients_hp, optimizer, loss, train_prediction, learning_rate, pack_var_hypers], feed_dict=feed_dict)
+        vrh, grads, _, l, predictions, lr, hyper_f = fit_cnn_ses.run(
+            [var_reset_hypers, gradients_hp, optimizer, loss, train_prediction, learning_rate, pack_var_hypers], feed_dict=feed_dict)
         print('fetch_hp:')
         print(hyper_f)
+        print('var_reset_hypers:')
+        print(vrh)
         print('gradients:')
         print(grads)
         mean_loss += l
@@ -265,7 +286,8 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
             file_helper.write(LINE_FILE_PATH, '=' * 80)
             del labels[:]
             del predicts[:]
-            file_helper.write(LINE_FILE_PATH, str(hyper_s.reshape([hyper_cnt]).tolist()))
+            file_helper.write(LINE_FILE_PATH, str(hyper_f))
+        hyper_f = list([int(hyper * norm_list[i]) for i, hyper in enumerate(hyper_f)])
         return fit_ret, hyper_f
 
 
@@ -274,10 +296,9 @@ def train_cnn_hyper(input_s, label_s, init_hypers,
                     train_inputs, train_labels, ph_hypers, var_reset_hypers, pack_var_hypers,
                     gradients_hp, optimizer, loss, train_prediction, learning_rate,
                     reset=False):
-    # print(train_prediction)
-    global hyper_cnt
-    hyper_cnt = len(init_hypers)
     sum_freq = 3
+    norm_list = norm(init_hypers)
+    init_hypers = [hyper / norm_list[i] for i, hyper in enumerate(init_hypers)]
     with tf.Session(graph=graph) as fit_cnn_ses:
         if os.path.exists(save_path):
             # Restore variables from disk.
@@ -335,8 +356,6 @@ def train_cnn_hyper(input_s, label_s, init_hypers,
             f_labels.append(predictions.reshape((batch_cnt_per_step, batch_size - hyper_cnt, EMBEDDING_SIZE)))
             print('fetch_hp:')
             print(hyper_f)
-            # tmp_hps = hyper_f.reshape([hyper_cnt]).tolist()
-            # file_helper.write(HP_FILE_PATH, str(tmp_hps))
             print('gradients:')
             print(grads)
             hp_mean_loss += l
@@ -347,20 +366,34 @@ def train_cnn_hyper(input_s, label_s, init_hypers,
                 print('Average loss at step %d: %f learning rate: %f' % (step, hp_mean_loss, lr))
                 # print(hp_s)
                 hp_diffs = list()
-                better_hp_cnt = 0
                 for i in range(hyper_cnt):
-                    hp_diffs.append(math.fabs(hyper_f[i] - init_hypers[i]))
-                    if hp_diffs[i] > init_hypers[i] * 0.10 and hp_diffs[i] > 0.01:
-                        better_hp_cnt += 1
-                        if better_hp_cnt >= hyper_cnt / 2:
-                            train_ret = True
-                            print('=' * 35 + 'hypers' + '=' * 35)
-                            print('batch_size, depth, num_hidden, layer_sum, patch_size')
-                            print(hyper_f)
-                            break
+                    hp_diffs.append(math.fabs(int(hyper_f[i] * norm_list[i]) - int(init_hypers[i] * norm_list[i])))
+                # 因为只需要一个hyper变化就停止，所以可能一直都是改同一个，所以需要random
+                ran_index = random.randint(0, hyper_cnt - 1)
+                if step <= num_step_cnt / 2 and hp_diffs[ran_index] > 1:
+                    if hp_diffs[ran_index] > init_hypers[ran_index] * norm_list[ran_index] * 0.05:
+                        train_ret = True
+                        print('=' * 30 + 'hyper in step %d' % step + '=' * 30)
+                        print('batch_size, depth, num_hidden, layer_sum, patch_size')
+                        print(hyper_f)
+                        print('random_index = {ran_index}, hp_diff[random index] = {hp_dif_ridx}'.
+                              format(ran_index=ran_index, hp_dif_ridx=hp_diffs[ran_index]))
+                # 到了后期要放宽条件
+                elif step > num_step_cnt / 2 and hp_diffs[ran_index] > 1:
+                    train_ret = True
+                    print('=' * 30 + 'hyper in step %d' % step + '=' * 30)
+                    print('batch_size, depth, num_hidden, layer_sum, patch_size')
+                    print(hyper_f)
+                    print('random_index = {ran_index}, hp_diff[random index] = {hp_dif_ridx}'.
+                          format(ran_index=ran_index, hp_dif_ridx=hp_diffs[ran_index]))
+                elif len(filter(math.isnan, grads)) >= hyper_cnt:
+                    print('all hyper gradient is nan')
+                    print([math.isnan(grad) for grad in grads])
+                    train_ret = True
 
             hp_mean_loss = 0
         final_hps = hyper_f.reshape([hyper_cnt]).tolist()
+        final_hps = [final_hp * norm_list[i] for i, final_hp in enumerate(final_hps)]
         file_helper.write(HP_FILE_PATH, str(final_hps))
         file_helper.write(GRAD_FILE_PATH, str(grads))
-    return train_ret, hyper_f.tolist()
+    return train_ret, final_hps

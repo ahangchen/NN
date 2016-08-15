@@ -1,8 +1,10 @@
 # coding=utf-8
+import os
 
 import matplotlib.pyplot as plt
 import re
 import seaborn
+import shutil
 
 from tuner.ctrl.const_define import HP_FILE_PATH, LINE_FILE_PATH, GRAD_FILE_PATH
 from tuner.util import file_helper
@@ -16,7 +18,7 @@ def draw(data_s, label_n):
 
 
 def mark():
-    exp_file = file_helper.read2mem('../../' + LINE_FILE_PATH)
+    exp_file = file_helper.read2mem('../' + LINE_FILE_PATH)
     exp_datas = exp_file.split('\n')
     cur_line = list()
     line_cnt = 0
@@ -28,9 +30,9 @@ def mark():
         elif exp_data.startswith('['):
             # 超参数转图片名
             jpg_name = str(
-                [num_str[0: 4].replace("-", "") for num_str in exp_data[1: -1].split(', ')]
+                [num_str[0: 4].replace("-", "") for num_str in exp_data[1: -1].split()]
             )[1: -1].replace("'", "").replace(', ', '-')
-            plt.savefig(str(line_cnt / 2) + '-' + jpg_name + '.jpg')
+            plt.savefig('data/' + str(line_cnt / 2) + '-' + jpg_name + '.jpg')
             plt.clf()
             continue
         else:
@@ -59,7 +61,7 @@ def avg_line():
                 cur_sum += float(exp_data)
                 cur_cnt += 1
     plt.plot(avg_s)
-    plt.savefig('avg_loss_change.jpg')
+    plt.savefig('data/avg_loss_change.jpg')
     plt.show()
 
 
@@ -87,7 +89,7 @@ def hp_line():
     layer_pl, = plt.plot(layer_cnt_s, label='layer_cnt')
     patch_pl, = plt.plot(patch_size_s, label='patch_size')
     plt.legend(handles=[batch_pl, depth_pl, num_pl, layer_pl, patch_pl])
-    plt.savefig('hp_change.jpg')
+    plt.savefig('data/hp_change.jpg')
     plt.show()
 
 
@@ -115,11 +117,17 @@ def grad_line():
     layer_pl, = plt.plot(layer_cnt_s, label='layer_cnt')
     patch_pl, = plt.plot(patch_size_s, label='patch_size')
     plt.legend(handles=[batch_pl, depth_pl, num_pl, layer_pl, patch_pl])
-    plt.savefig('grad_change.jpg')
+    plt.savefig('data/grad_change.jpg')
     plt.show()
 
 if __name__ == '__main__':
-    # mark()
-    # avg_line()
-    # hp_line()
+    mark()
+    avg_line()
+    hp_line()
     grad_line()
+    shutil.move('../../' + LINE_FILE_PATH, 'data/' + LINE_FILE_PATH)
+    shutil.move('../../' + HP_FILE_PATH, 'data/' + HP_FILE_PATH)
+    shutil.move('../../' + GRAD_FILE_PATH, 'data/' + GRAD_FILE_PATH)
+    shutil.move('../../checkpoint', 'data/checkpoint')
+    shutil.move('../../model.ckpt', 'data/model.ckpt')
+    shutil.move('../../model.ckpt.meta', 'data/model.ckpt.meta')

@@ -65,6 +65,10 @@ def train_cnn(reset, hypers, cnn_loss):
     # create np hyper from hypers
     np_hyper_s = np.array(hypers).reshape([hyper_cnt])
     # when train, hp is not needed
+    if reset == 0:
+        reset = False
+    else:
+         reset = True
     ret, _ = fit_cnn_loss(feature_s, label_s, np_hyper_s, graph, saver, is_fit,
                           train_inputs, train_labels, ph_hypers, var_reset_hypers, pack_var_hypers,
                           gradients_hp, optimizer, loss, train_prediction, learning_rate, reset, True)

@@ -18,7 +18,7 @@ def draw(data_s, label_n):
 
 
 def mark():
-    exp_file = file_helper.read2mem('../' + LINE_FILE_PATH)
+    exp_file = file_helper.read2mem('../../' + LINE_FILE_PATH)
     exp_datas = exp_file.split('\n')
     cur_line = list()
     line_cnt = 0

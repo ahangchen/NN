@@ -37,10 +37,18 @@ def init_graph(hypers, cnn_batch_size):
 def _slice(_x, n, dim):
     return _x[:, n * dim:(n + 1) * dim]
 
+init_norm = False
+norm_list = list()
+
 
 def norm(params):
-    norm_list = [(param / 10 + 1) * 10.0 for param in params]
-    return norm_list
+    global init_norm
+    if not init_norm:
+        print('init norm')
+        for param in params:
+            norm_list.append(param * 10.0)
+        print(norm_list)
+        init_norm = True
 
 
 def init_model():
@@ -193,14 +201,8 @@ def fit_cnn_loss(input_s, label_s, hyper_s,
                  reset=False, train_hyper=False):
     global hyper_cnt
     global batch_size
-    norm_list = norm(hyper_s)
-    print('reset?')
-    print(reset)
-    print('hypers before norm:')
-    print(hyper_s)
+    norm(hyper_s)
     hyper_s = [hyper / norm_list[i] for i, hyper in enumerate(hyper_s)]
-    print('hypers after norm:')
-    print(hyper_s)
     hyper_cnt = len(hyper_s)
     global step
     global save_path
@@ -297,7 +299,6 @@ def train_cnn_hyper(input_s, label_s, init_hypers,
                     gradients_hp, optimizer, loss, train_prediction, learning_rate,
                     reset=False):
     sum_freq = 3
-    norm_list = norm(init_hypers)
     init_hypers = [hyper / norm_list[i] for i, hyper in enumerate(init_hypers)]
     with tf.Session(graph=graph) as fit_cnn_ses:
         if os.path.exists(save_path):

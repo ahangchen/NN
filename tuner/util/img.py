@@ -6,7 +6,7 @@ import re
 import seaborn
 import shutil
 
-from tuner.ctrl.const_define import HP_FILE_PATH, LINE_FILE_PATH, GRAD_FILE_PATH
+from tuner.ctrl.const_define import HP_FILE_PATH, LINE_FILE_PATH, GRAD_FILE_PATH, PREDICT_FILE_PATH
 from tuner.util import file_helper
 
 
@@ -120,7 +120,8 @@ def grad_line():
     plt.savefig('data/grad_change.jpg')
     plt.show()
 
-if __name__ == '__main__':
+
+def viz_fit_hp():
     mark()
     avg_line()
     hp_line()
@@ -131,3 +132,40 @@ if __name__ == '__main__':
     shutil.move('../../checkpoint', 'data/checkpoint')
     shutil.move('../../model.ckpt', 'data/model.ckpt')
     shutil.move('../../model.ckpt.meta', 'data/model.ckpt.meta')
+
+
+def viz_fit_predict():
+    actual_fit_str = file_helper.read2mem('../../' + LINE_FILE_PATH)
+    actual_fit_s = actual_fit_str.split('===\n')
+    actual_loss = list()
+    predict_fit_str = file_helper.read2mem('../../' + PREDICT_FILE_PATH)
+    predict_fit_s = predict_fit_str.split('===\n')
+    predict_loss = list()
+    cur_idx = 0
+    print('actual_fit_s length: %d' % len(actual_fit_s))
+    print('predict_fit_s length: %d' % len(predict_fit_s))
+    for loss_data, predict_data in zip(actual_fit_s, predict_fit_s):
+        loss_es = loss_data.split('\n')
+        predict_s = predict_data.split('\n')
+        print('loss_es length: %d' % len(loss_es))
+        print('predict_s length: %d' % len(predict_s))
+        for loss, predict in zip(loss_es, predict_s):
+            if re.match("^\d+?\.\d+?$", loss) is not None:
+                actual_loss.append(float(loss))
+            if re.match("^\d+?\.\d+?$", predict) is not None:
+                predict_loss.append(float(predict))
+        if len(actual_loss) < 1 or len(predict_loss) < 1:
+            print('actual_loss length: %d' % len(actual_loss))
+            print('predict_loss length: %d' % len(predict_loss))
+            continue
+        actual_pl, = plt.plot(actual_loss, label='actual')
+        predict_pl, = plt.plot(predict_loss, label='predict')
+        plt.legend(handles=[actual_pl, predict_pl])
+        plt.savefig('data/fit_result%d.jpg' % cur_idx)
+        plt.clf()
+        cur_idx += 1
+        del actual_loss[:]
+        del predict_loss[:]
+
+
+viz_fit_predict()

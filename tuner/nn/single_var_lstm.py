@@ -12,14 +12,6 @@ from tuner.util import file_helper
 
 num_nodes = 64
 
-
-def logprob(predictions, labels):
-    # prevent negative probability
-    """Log-probability of the true labels in a predicted batch."""
-    predictions[predictions < 1e-10] = 1e-10
-    return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
-
-
 hyper_cnt = 0
 batch_size = 0
 has_init = False

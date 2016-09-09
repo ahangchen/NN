@@ -142,6 +142,7 @@ def init_model():
             logits = tf.nn.xw_plus_b(tf.concat(0, outputs), w, b)
             # print(logits)
             # print(tf.concat(0, train_labels))
+            # todo if not fit loss is last logits
             loss = tf.cond(is_fit,
                            lambda: tf.reduce_mean(tf.sqrt(tf.square(tf.sub(logits, tf.concat(0, train_labels))))),
                            lambda: tf.reduce_mean(logits))

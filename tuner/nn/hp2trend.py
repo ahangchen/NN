@@ -16,7 +16,13 @@ def assign_diffable_vars2tensor(placeholder, input_size):
     tf_info_var_1d = tf.pack(diffable_vars)
     # 为了作为矩阵
     tf_info_var_2d = tf.reshape(tf_info_var_1d, [input_size, 1])
-    return tf_info_var_2d
+    #
+    reset_hps = []
+    for var in empty_var_inputs:
+        reset_hps.append(var)
+    for var in diffable_vars:
+        reset_hps.append(var)
+    return tf_info_var_2d, reset_hps
 
 
 def tensor_reshape_with_matrix(input_matrix, output_shape):
@@ -84,7 +90,7 @@ def dnn(input_tensor, input_shape, output_shape, drop_out=False, layer_cnt=2):
     return output
 
 
-def rnn(x, n_hidden=64):
+def rnn(x, n_hidden=32):
     n_input = int(x.get_shape()[0])
     n_steps = int(x.get_shape()[1])
     x = tf.reshape(x, [-1, n_steps, n_input])  # (batch_size, n_steps, n_input)
@@ -105,7 +111,7 @@ def rnn(x, n_hidden=64):
 def grad_optimizer(var_list, loss):
     global_step = tf.Variable(0, trainable=False)
     learning_rate = tf.train.exponential_decay(
-        1.5, global_step, 20, 0.8, staircase=True)
+        0.5, global_step, 10, 0.5, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -121,7 +127,7 @@ class FitTrendModel(object):
         with self.graph.as_default():
             # 接收输入
             self.ph_hypers = tf.placeholder(tf.float32, shape=[self.hyper_cnt], name='ph_hypers')
-            self.tf_hypers = assign_diffable_vars2tensor(self.ph_hypers, self.hyper_cnt)
+            self.tf_hypers, self.reset_vars = assign_diffable_vars2tensor(self.ph_hypers, self.hyper_cnt)
             # 先喂给一个神经网络产生input
             trend_input = dnn(self.tf_hypers, [self.hyper_cnt, 1], [output_size])
             print(trend_input)
@@ -154,12 +160,13 @@ class FitTrendModel(object):
             self.saver = tf.train.Saver()
 
     def init(self, init_hp, session):
+        init_feed = dict()
+        init_feed[self.ph_hypers] = init_hp
         if os.path.exists(self.save_path):
             # Restore variables from disk.
             self.saver.restore(session, self.save_path)
+            tf.initialize_variables(var_list=self.reset_vars).run(feed_dict=init_feed)
         else:
-            init_feed = dict()
-            init_feed[self.ph_hypers] = init_hp
             tf.initialize_all_variables().run(feed_dict=init_feed)
 
     def fit(self, input_data, trend):
@@ -169,8 +176,9 @@ class FitTrendModel(object):
         fit_dict[self.train_label] = trend
         with tf.Session(graph=self.graph) as session:
             self.init(input_data, session)
-            _, loss, predict = session.run([self.optimizer, self.loss, self.predict], feed_dict=fit_dict)
+            _, loss, hps, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
+            print(hps)
             print(loss)
             print(trend)
             print(predict)
@@ -184,7 +192,6 @@ def init_model(input_size, output_size):
 
 def fit_trend(model, input_data, trend):
     model.fit(input_data, trend)
-    print('fit ++')
 
 
 def train_hp():

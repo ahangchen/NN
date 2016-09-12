@@ -10,7 +10,7 @@ def test_inputs(hp_cnt):
 
 
 def test_label(test_data):
-    return [[hp[0] / (hp[1] + x + hp[2]) * hp[3] / hp[4] for x in range(1, 10)] for hp in test_data]
+    return [[hp[0] / (x * hp[1] * 10.0 + hp[2] * hp[3]) * hp[4] for x in range(1, 20)] for hp in test_data]
 
 
 if __name__ == '__main__':

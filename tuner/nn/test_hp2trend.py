@@ -4,13 +4,13 @@ import random
 
 
 def test_inputs(hp_cnt):
-    test_data = [[float(i) for i in range(j, hp_cnt + j)] for j in range(1, 101)]
+    test_data = [[random.uniform(0, 1) + 0.1 for _ in range(hp_cnt)] for _ in range(1, 101)]
     random.shuffle(test_data)
     return test_data
 
 
 def test_label(test_data):
-    return [[hp[0] / (x * hp[1] * 10.0 + hp[2] * hp[3]) * hp[4] for x in range(1, 20)] for hp in test_data]
+    return [[hp[0] / (x * hp[1] * 10.0 + hp[2] * hp[3]) * hp[4] for x in range(1, 10)] for hp in test_data]
 
 
 if __name__ == '__main__':
@@ -21,7 +21,8 @@ if __name__ == '__main__':
     print('test_label:')
     print(len(test_labels))
     model = init_model(len(test_hps[0]), len(test_labels[0]))
-    for test_hp, test_label in zip(test_hps, test_labels):
-        fit_trend(model, np.array(test_hp), np.array(test_label))
+    for _ in range(20):
+        for test_hp, test_label in zip(test_hps, test_labels):
+            fit_trend(model, np.array(test_hp), np.array(test_label))
 
 

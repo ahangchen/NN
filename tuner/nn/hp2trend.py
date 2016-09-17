@@ -28,18 +28,19 @@ def assign_diffable_vars2tensor(placeholder, input_size):
 def tensor_reshape_with_matrix(input_matrix, output_shape):
     # 一般从二维到一维
     input_shape = input_matrix.get_shape()
-    left_weight = tf.Variable(tf.truncated_normal([output_shape[0], int(input_shape[0])], mean=-0.1, stddev=0.1))
+    left_weight = tf.Variable(tf.truncated_normal([output_shape[0], int(input_shape[0])], mean=-0.1, stddev=0.5))
     left_biase = tf.Variable(tf.truncated_normal([int(input_shape[1])]))
     left_output = tf.nn.xw_plus_b(left_weight, input_matrix, left_biase)
-    print(left_output)
-    right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]], mean=-0.1, stddev=0.1))
+    left_output = tf.nn.relu6(left_output)
+    right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]], mean=-0.1, stddev=1.0))
     right_biase = tf.Variable(tf.truncated_normal([output_shape[1]]))
     right_output = tf.nn.xw_plus_b(left_output, right_weight, right_biase)
-    print(right_output)
     return right_output
 
 
-def dnn(input_tensor, input_shape, output_shape, drop_out=False, layer_cnt=2):
+def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=2):
+    input_shape = input_tensor.get_shape()
+    input_shape = [int(shape_i) for shape_i in input_shape]
     # input shape 是一个二维数组
     hidden_node_count = 64
     # start weight
@@ -63,7 +64,7 @@ def dnn(input_tensor, input_shape, output_shape, drop_out=False, layer_cnt=2):
         hidden_cur_cnt = hidden_next_cnt
     # first wx + b
     y0 = tf.matmul(input_tensor, weights1) + biases1
-    # first relu
+    # first relu6
     hidden = tf.nn.relu(y0)
     hidden_drop = hidden
     # first DropOut
@@ -90,7 +91,7 @@ def dnn(input_tensor, input_shape, output_shape, drop_out=False, layer_cnt=2):
     return output
 
 
-def rnn(x, n_hidden=32):
+def rnn(x, n_hidden=64):
     n_input = int(x.get_shape()[0])
     n_steps = int(x.get_shape()[1])
     x = tf.reshape(x, [-1, n_steps, n_input])  # (batch_size, n_steps, n_input)
@@ -102,7 +103,7 @@ def rnn(x, n_hidden=32):
     x = tf.split(0, n_steps, x)  # n_steps * (batch_size, n_input)
 
     # Define a GRU cell with tensorflow
-    lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+    lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden, state_is_tuple=True)
     # Get lstm cell output
     y, final_state = tf.nn.rnn(lstm_cell, x, dtype=tf.float32)
     return y
@@ -111,7 +112,7 @@ def rnn(x, n_hidden=32):
 def grad_optimizer(var_list, loss):
     global_step = tf.Variable(0, trainable=False)
     learning_rate = tf.train.exponential_decay(
-        0.5, global_step, 10, 0.5, staircase=True)
+        0.1, global_step, 50, 0.1, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -128,22 +129,23 @@ class FitTrendModel(object):
             # 接收输入
             self.ph_hypers = tf.placeholder(tf.float32, shape=[self.hyper_cnt], name='ph_hypers')
             self.tf_hypers, self.reset_vars = assign_diffable_vars2tensor(self.ph_hypers, self.hyper_cnt)
-            # 先喂给一个神经网络产生input
-            trend_input = dnn(self.tf_hypers, [self.hyper_cnt, 1], [output_size])
-            print(trend_input)
+            rnn_step = 5
+            trend_input = tf.concat(0, [self.tf_hypers for _ in range(rnn_step)])
+            # trend_input = tf.reshape(self.tf_hypers, [1, self.hyper_cnt])
             # 通过一个RNN
-            trend_outputs = rnn(trend_input, output_size)
+            trend_outputs = rnn(trend_input)
             print(tf.concat(0, trend_outputs))
-            # RNN接一个小型NN
-            trend_output = tensor_reshape_with_matrix(tf.concat(0, trend_outputs),
-                                                      [output_size, 1])
+            # RNN接一个DNN
+            trend_output = dnn(tf.concat(0, trend_outputs), [output_size, 1])
+            # trend_output = tensor_reshape_with_matrix(tf.concat(0, trend_outputs),
+            #                                           [output_size, 1])
             self.predict = trend_output
             # 实际的trend
             self.train_label = tf.placeholder(tf.float32, shape=[output_size], name='train_label')
             # 预测准确率
             predict_accuracy = tf.reduce_mean(tf.sqrt(tf.square(tf.sub(trend_output, tf.concat(0, self.train_label)))))
             # 稳定时损失
-            stable_loss = trend_outputs[-1]
+            stable_loss = trend_output
             self.is_fit = tf.placeholder(tf.bool, name='is_fit')
             self.loss = tf.cond(self.is_fit, lambda: predict_accuracy, lambda: stable_loss)
 

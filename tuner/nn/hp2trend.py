@@ -144,6 +144,7 @@ class FitTrendModel(object):
             self.train_label = tf.placeholder(tf.float32, shape=[output_size], name='train_label')
             # 预测准确率
             predict_accuracy = tf.reduce_mean(tf.sqrt(tf.square(tf.sub(trend_output, tf.concat(0, self.train_label)))))
+            predict_accuracy /= tf.reduce_mean(tf.concat(0, self.train_label))
             # 稳定时损失
             stable_loss = trend_output
             self.is_fit = tf.placeholder(tf.bool, name='is_fit')
@@ -182,9 +183,23 @@ class FitTrendModel(object):
             self.saver.save(session, self.save_path)
             print(hps)
             print(loss)
-            print(trend)
-            print(predict)
+            for trend_item in trend:
+                print(trend_item)
+            print(" ")
+            for predict_item in predict[0]:
+                print(predict_item)
             print('=' * 40)
+
+    def better_hp(self, input_data, trend):
+        fit_dict = dict()
+        fit_dict[self.is_fit] = False
+        fit_dict[self.ph_hypers] = input_data
+        fit_dict[self.train_label] = trend
+        with tf.Session(graph=self.graph) as session:
+            self.init(input_data, session)
+            _, loss, hps, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
+            self.saver.save(session, self.save_path)
+            return hps
 
 
 def init_model(input_size, output_size):
@@ -196,5 +211,5 @@ def fit_trend(model, input_data, trend):
     model.fit(input_data, trend)
 
 
-def train_hp():
-    pass
+def train_hp(model, input_data, trend):
+    model.better_hp(input_data, trend)

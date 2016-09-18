@@ -1,12 +1,11 @@
 # coding=utf-8
 import json
 
-# Create your views here.
 from django.views.decorators.csrf import csrf_exempt
 
-from tuner.nn import fit_predict
-from tuner.nn.fit_predict import predict_future
-from tuner.nn.tf_train import train_cnn, CONTINUE_TRAIN, END_TRAIN, NN_OK, better_hyper
+from tuner.nn.dj import fit_predict
+from tuner.nn.dj.fit_predict import predict_future
+from tuner.nn.test.tf_train import train_cnn, CONTINUE_TRAIN, END_TRAIN, NN_OK, better_hyper
 from tuner.util import json_helper
 
 

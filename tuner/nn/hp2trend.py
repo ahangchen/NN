@@ -109,10 +109,12 @@ def rnn(x, n_hidden=64):
     return y
 
 
-def grad_optimizer(var_list, loss):
+def grad_optimizer(var_list, loss, lrd=True):
     global_step = tf.Variable(0, trainable=False)
-    learning_rate = tf.train.exponential_decay(
-        0.1, global_step, 50, 0.1, staircase=True)
+    learning_rate = 0.1
+    if lrd:
+        learning_rate = tf.train.exponential_decay(
+            0.1, global_step, 50, 0.1, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -156,7 +158,7 @@ class FitTrendModel(object):
             self.v_fit_s = [v for v in self.var_s if v not in self.v_hp_s]
 
             optimizer_fit, _ = grad_optimizer(self.v_fit_s, self.loss)
-            optimizer_hp, self.grad_hps = grad_optimizer(self.v_hp_s, self.loss)
+            optimizer_hp, self.grad_hps = grad_optimizer(self.v_hp_s, self.loss, lrd=False)
 
             self.optimizer = tf.cond(self.is_fit, lambda: optimizer_fit, lambda: optimizer_hp)
 
@@ -212,4 +214,4 @@ def fit_trend(model, input_data, trend):
 
 
 def train_hp(model, input_data, trend):
-    model.better_hp(input_data, trend)
+    return model.better_hp(input_data, trend)

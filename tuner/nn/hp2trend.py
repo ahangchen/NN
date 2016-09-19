@@ -109,17 +109,28 @@ def rnn(x, n_hidden=64):
     return y
 
 
-def grad_optimizer(var_list, loss, lrd=True):
+def var_optimizer(var_list, loss, start_rate=0.1, lrd=True):
     global_step = tf.Variable(0, trainable=False)
-    learning_rate = 0.1
+    learning_rate = start_rate
     if lrd:
         learning_rate = tf.train.exponential_decay(
-            0.1, global_step, 50, 0.1, staircase=True)
+            start_rate, global_step, 50, 0.1, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
     optimizer = optimizer.apply_gradients(zip(gradients, return_v), global_step=global_step)
-    return optimizer, gradients
+    return optimizer
+
+
+def var_gradient(var_list, loss, start_rate=0.1, lrd=True):
+    global_step = tf.Variable(0, trainable=False)
+    learning_rate = start_rate
+    if lrd:
+        learning_rate = tf.train.exponential_decay(
+            start_rate, global_step, 50, 0.1, staircase=True)
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+    gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
+    return gradients
 
 
 class FitTrendModel(object):
@@ -148,7 +159,8 @@ class FitTrendModel(object):
             predict_accuracy = tf.reduce_mean(tf.sqrt(tf.square(tf.sub(trend_output, tf.concat(0, self.train_label)))))
             predict_accuracy /= tf.reduce_mean(tf.concat(0, self.train_label))
             # 稳定时损失
-            stable_loss = trend_output
+            stable_loss = tf.unpack(tf.unpack(trend_output)[0])[-1]
+            print(stable_loss)
             self.is_fit = tf.placeholder(tf.bool, name='is_fit')
             self.loss = tf.cond(self.is_fit, lambda: predict_accuracy, lambda: stable_loss)
 
@@ -156,11 +168,19 @@ class FitTrendModel(object):
             self.var_s = tf.trainable_variables()
             self.v_hp_s = self.var_s[0: self.hyper_cnt]
             self.v_fit_s = [v for v in self.var_s if v not in self.v_hp_s]
+            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
 
-            optimizer_fit, _ = grad_optimizer(self.v_fit_s, self.loss)
-            optimizer_hp, self.grad_hps = grad_optimizer(self.v_hp_s, self.loss, lrd=False)
+            def optimize_fit():
+                optimizer_fit = var_optimizer(self.v_fit_s, self.loss)
+                return optimizer_fit
 
-            self.optimizer = tf.cond(self.is_fit, lambda: optimizer_fit, lambda: optimizer_hp)
+            def optimize_hp():
+                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
+                return optimizer_hp
+
+            self.fit_loss_static = list()
+            self.stable_loss_static = list()
+            self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
 
             self.saver = tf.train.Saver()
 
@@ -181,16 +201,18 @@ class FitTrendModel(object):
         fit_dict[self.train_label] = trend
         with tf.Session(graph=self.graph) as session:
             self.init(input_data, session)
-            _, loss, hps, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
+            _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
-            print(hps)
-            print(loss)
-            for trend_item in trend:
-                print(trend_item)
-            print(" ")
-            for predict_item in predict[0]:
-                print(predict_item)
+            self.fit_loss_static.append(loss)
             print('=' * 40)
+            print('hps:')
+            print(hps)
+            print('fit loss:')
+            print(loss)
+            print('predict:')
+            print(predict)
+            print('trend')
+            print(trend)
 
     def better_hp(self, input_data, trend):
         fit_dict = dict()
@@ -199,9 +221,30 @@ class FitTrendModel(object):
         fit_dict[self.train_label] = trend
         with tf.Session(graph=self.graph) as session:
             self.init(input_data, session)
-            _, loss, hps, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
+            _, hps, loss, predict, grads = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict, self.grads], feed_dict=fit_dict)
+            self.stable_loss_static.append(loss)
+            print('*' * 40)
+            print('hps:')
+            print(hps)
+            print('gradients:')
+            print(grads)
+            print('stable loss:')
+            print(loss)
+            print('predict:')
+            print(predict)
+            print('trend')
+            print(trend)
+
             self.saver.save(session, self.save_path)
-            return hps
+            return np.reshape(hps, [self.hyper_cnt])
+
+    def dump_static(self):
+        print('stable_loss_static')
+        for loss in self.stable_loss_static:
+            print(loss)
+        print('fit_loss_static')
+        for loss in self.fit_loss_static:
+            print(loss)
 
 
 def init_model(input_size, output_size):

@@ -28,11 +28,11 @@ def assign_diffable_vars2tensor(placeholder, input_size):
 def tensor_reshape_with_matrix(input_matrix, output_shape):
     # 一般从二维到一维
     input_shape = input_matrix.get_shape()
-    left_weight = tf.Variable(tf.truncated_normal([output_shape[0], int(input_shape[0])], mean=-0.1, stddev=0.5))
+    left_weight = tf.Variable(tf.truncated_normal([output_shape[0], int(input_shape[0])]))
     left_biase = tf.Variable(tf.truncated_normal([int(input_shape[1])]))
     left_output = tf.nn.xw_plus_b(left_weight, input_matrix, left_biase)
-    left_output = tf.nn.relu6(left_output)
-    right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]], mean=-0.1, stddev=1.0))
+    left_output = tf.nn.relu(left_output)
+    right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]]))
     right_biase = tf.Variable(tf.truncated_normal([output_shape[1]]))
     right_output = tf.nn.xw_plus_b(left_output, right_weight, right_biase)
     return right_output
@@ -82,12 +82,12 @@ def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=2):
 
         y0 = tf.matmul(hidden, weights[i]) + biases[i]
         hidden = tf.nn.relu(y0)
-
+    output = tensor_reshape_with_matrix(hidden, [output_shape[0], output_shape[1]])
     # last weight
-    weights2 = tf.Variable(tf.truncated_normal([hidden_cur_cnt, output_shape[0]], stddev=hidden_stddev / 2))
-    biases2 = tf.Variable(tf.zeros([output_shape[0]]))
+    # weights2 = tf.Variable(tf.truncated_normal([hidden_cur_cnt, output_shape[0]], stddev=hidden_stddev / 2))
+    # biases2 = tf.Variable(tf.zeros([output_shape[0]]))
     # last wx + b
-    output = tf.matmul(hidden, weights2) + biases2
+    # output = tf.matmul(hidden, weights2) + biases2
     return output
 
 
@@ -144,21 +144,21 @@ class FitTrendModel(object):
             self.tf_hypers, self.reset_vars = assign_diffable_vars2tensor(self.ph_hypers, self.hyper_cnt)
             rnn_step = 5
             trend_input = tf.concat(0, [self.tf_hypers for _ in range(rnn_step)])
-            # trend_input = tf.reshape(self.tf_hypers, [1, self.hyper_cnt])
             # 通过一个RNN
             trend_outputs = rnn(trend_input)
+            print('rnn output')
             print(tf.concat(0, trend_outputs))
             # RNN接一个DNN
-            trend_output = dnn(tf.concat(0, trend_outputs), [output_size, 1])
-            # trend_output = tensor_reshape_with_matrix(tf.concat(0, trend_outputs),
-            #                                           [output_size, 1])
+            trend_output = dnn(tf.concat(0, trend_outputs), [1, output_size])
+            print('dnn output')
+            print(trend_output)
             self.predict = trend_output
             # 实际的trend
             self.train_label = tf.placeholder(tf.float32, shape=[output_size], name='train_label')
-            # 预测准确率
-            predict_accuracy = tf.reduce_mean(tf.sqrt(tf.square(tf.sub(trend_output, tf.concat(0, self.train_label)))))
-            predict_accuracy /= tf.reduce_mean(tf.concat(0, self.train_label))
-            # 稳定时损失
+            # 预测准确率，predict和trend的几何距离
+            predict_accuracy = tf.sqrt(tf.reduce_sum(tf.square(tf.sub(trend_output, self.train_label)))) / output_size
+            # predict_accuracy /= tf.reduce_mean(tf.concat(0, self.train_label))
+            # 稳定时损失，最后一个损失
             stable_loss = tf.unpack(tf.unpack(trend_output)[0])[-1]
             print(stable_loss)
             self.is_fit = tf.placeholder(tf.bool, name='is_fit')
@@ -184,13 +184,14 @@ class FitTrendModel(object):
 
             self.saver = tf.train.Saver()
 
-    def init(self, init_hp, session):
+    def init_vars(self, init_hp, session, reset_hp=False):
         init_feed = dict()
         init_feed[self.ph_hypers] = init_hp
         if os.path.exists(self.save_path):
             # Restore variables from disk.
             self.saver.restore(session, self.save_path)
-            tf.initialize_variables(var_list=self.reset_vars).run(feed_dict=init_feed)
+            if reset_hp:
+                tf.initialize_variables(var_list=self.reset_vars).run(feed_dict=init_feed)
         else:
             tf.initialize_all_variables().run(feed_dict=init_feed)
 
@@ -200,7 +201,7 @@ class FitTrendModel(object):
         fit_dict[self.ph_hypers] = input_data
         fit_dict[self.train_label] = trend
         with tf.Session(graph=self.graph) as session:
-            self.init(input_data, session)
+            self.init_vars(input_data, session)
             _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
             self.fit_loss_static.append(loss)
@@ -220,7 +221,7 @@ class FitTrendModel(object):
         fit_dict[self.ph_hypers] = input_data
         fit_dict[self.train_label] = trend
         with tf.Session(graph=self.graph) as session:
-            self.init(input_data, session)
+            self.init_vars(input_data, session)
             _, hps, loss, predict, grads = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict, self.grads], feed_dict=fit_dict)
             self.stable_loss_static.append(loss)
             print('*' * 40)
@@ -230,15 +231,18 @@ class FitTrendModel(object):
             print(grads)
             print('stable loss:')
             print(loss)
-            print('predict:')
-            print(predict)
-            print('trend')
-            print(trend)
+            # print('predict:')
+            # print(predict)
+            # print('trend')
+            # print(trend)
 
             self.saver.save(session, self.save_path)
             return np.reshape(hps, [self.hyper_cnt])
 
-    def dump_static(self):
+    def info_collect(self):
+        pass
+
+    def dump_collect(self):
         print('stable_loss_static')
         for loss in self.stable_loss_static:
             print(loss)

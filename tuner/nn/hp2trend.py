@@ -3,6 +3,8 @@ import os
 import numpy as np
 import tensorflow as tf
 
+from tuner.util import file_helper
+
 
 def assign_diffable_vars2tensor(placeholder, input_size):
     # 为了赋值
@@ -138,6 +140,17 @@ class FitTrendModel(object):
         self.graph = tf.Graph()
         self.hyper_cnt = input_size
         self.save_path = "fit_trend.ckpt"
+
+        self.collect_counter = 0
+        self.fit_loss_collect = list()
+        self.stable_loss_predict_collect = list()
+        self.hp_collect = [list() for _ in range(self.hyper_cnt)]
+        self.gradient_collect = [list() for _ in range(self.hyper_cnt)]
+        self.stable_loss_label_collect = list()
+
+        self.hp_norms = list()
+        self.has_init = False
+
         with self.graph.as_default():
             # 接收输入
             self.ph_hypers = tf.placeholder(tf.float32, shape=[self.hyper_cnt], name='ph_hypers')
@@ -168,28 +181,21 @@ class FitTrendModel(object):
             self.var_s = tf.trainable_variables()
             self.v_hp_s = self.var_s[0: self.hyper_cnt]
             self.v_fit_s = [v for v in self.var_s if v not in self.v_hp_s]
-            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
+            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.01, lrd=False)
 
             def optimize_fit():
                 optimizer_fit = var_optimizer(self.v_fit_s, self.loss)
                 return optimizer_fit
 
             def optimize_hp():
-                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
+                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.01, lrd=False)
                 return optimizer_hp
 
             self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
-
-            self.collect_counter = 0
-            self.fit_loss_collect = list()
-            self.stable_loss_predict_collect = list()
-            self.hp_collect = [list() for _ in range(self.hyper_cnt)]
-            self.gradient_collect = [list() for _ in range(self.hyper_cnt)]
-            self.stable_loss_label_collect = list()
-
             self.saver = tf.train.Saver()
 
     def init_vars(self, init_hp, session, reset_hp=False):
+        print(init_hp)
         init_feed = dict()
         init_feed[self.ph_hypers] = init_hp
         if os.path.exists(self.save_path):
@@ -201,18 +207,24 @@ class FitTrendModel(object):
             tf.initialize_all_variables().run(feed_dict=init_feed)
 
     def fit(self, input_data, trend):
+        if not self.has_init:
+            self.norm(input_data)
+        norm_hps = [hp / self.hp_norms[i] for i, hp in enumerate(input_data)]
         fit_dict = dict()
         fit_dict[self.is_fit] = True
-        fit_dict[self.ph_hypers] = input_data
+        fit_dict[self.ph_hypers] = norm_hps
         fit_dict[self.train_label] = trend
         with tf.Session(graph=self.graph) as session:
-            self.init_vars(input_data, session)
+            self.init_vars(norm_hps, session, not self.has_init)
             _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
             if self.collect_counter % 10 == 0:
                 self.fit_loss_collect.append(loss)
+                file_helper.write('hp2trend_fit_loss.txt', str(loss))
             self.collect_counter += 1
             self.collect_counter %= 5
+        if not self.has_init:
+            self.has_init = True
 
     def better_hp(self, input_data, trend):
         fit_dict = dict()
@@ -224,15 +236,25 @@ class FitTrendModel(object):
             _, hps, loss, predict, grads = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict, self.grads], feed_dict=fit_dict)
             self.info_collect(hps, grads, loss, trend[-1])
             self.saver.save(session, self.save_path)
-            return np.reshape(hps, [self.hyper_cnt])
+            better_hp_norms = np.reshape(hps, [self.hyper_cnt]).tolist()
+            return [better_hp_norm * self.hp_norms[i] for i, better_hp_norm in enumerate(better_hp_norms)]
+
+    def norm(self, params):
+        for param in params:
+            self.hp_norms.append(param * 10.0)
+        print(self.hp_norms)
 
     def info_collect(self, hps, grads, stable_loss_predict, stable_loss_label, print_log=True):
         for index, hp_list in enumerate(self.hp_collect):
             hp_list.append(hps[index])
+            file_helper.write('hp2trend_hps%d.txt' % index, str(hps[index]))
         for index, grad_list in enumerate(self.gradient_collect):
             grad_list.append(grads[index])
+            file_helper.write('hp2trend_grads%d.txt' % index, str(grads[index]))
         self.stable_loss_predict_collect.append(stable_loss_predict)
+        file_helper.write('hp2trend_stable_loss_predict.txt', str(stable_loss_predict))
         self.stable_loss_label_collect.append(stable_loss_label)
+        file_helper.write('hp2trend_stable_loss_label.txt', str(stable_loss_label))
         if print_log:
             print('hps')
             print(hps)

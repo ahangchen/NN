@@ -39,7 +39,7 @@ def norm(params):
         print('init norm')
         for param in params:
             norm_list.append(param * 10.0)
-        print(norm_list)
+        print()
         init_norm = True
 
 

@@ -7,7 +7,7 @@ model = None
 def fit(input_data, trend):
     global model
     if model is None:
-        model = init_model(input_data, trend)
+        model = init_model(len(input_data), len(trend))
     fit_trend(model, np.array(input_data), np.array(trend))
 
 
@@ -17,5 +17,6 @@ def train(input_data, trend):
 
 
 def trend2_better_hp(input_data, trend):
-    fit(input_data, trend)
+    for _ in range(10):
+        fit(input_data, trend)
     return train(input_data, trend)

@@ -80,12 +80,13 @@ def predict(request):
     return json_helper.dump_err_msg(NN_OK, predict_future(cur_loss, hypers))
 
 
+@csrf_exempt
 def hp2trend(request):
     cur_loss = request.POST.getlist('loss')
     cur_loss = json.loads(cur_loss[0])
     hypers = request.POST.getlist('hyper')
     hypers = json.loads(hypers[0])
-    better_hps = trend2_better_hp(cur_loss, hypers)
+    better_hps = trend2_better_hp(hypers, cur_loss)
     print(better_hps)
     return json_helper.dump_err_msg(NN_OK, better_hps)
 

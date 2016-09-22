@@ -127,7 +127,7 @@ def var_gradient(var_list, loss, start_rate=0.1, lrd=True):
     learning_rate = start_rate
     if lrd:
         learning_rate = tf.train.exponential_decay(
-            start_rate, global_step, 50, 0.1, staircase=True)
+            start_rate, global_step, 50, 0.8, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     return gradients
@@ -178,12 +178,14 @@ class FitTrendModel(object):
                 optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
                 return optimizer_hp
 
+            self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
+
+            self.collect_counter = 0
             self.fit_loss_collect = list()
             self.stable_loss_predict_collect = list()
             self.hp_collect = [list() for _ in range(self.hyper_cnt)]
             self.gradient_collect = [list() for _ in range(self.hyper_cnt)]
             self.stable_loss_label_collect = list()
-            self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
 
             self.saver = tf.train.Saver()
 
@@ -207,7 +209,10 @@ class FitTrendModel(object):
             self.init_vars(input_data, session)
             _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
-            self.fit_loss_collect.append(loss)
+            if self.collect_counter % 10 == 0:
+                self.fit_loss_collect.append(loss)
+            self.collect_counter += 1
+            self.collect_counter %= 5
 
     def better_hp(self, input_data, trend):
         fit_dict = dict()
@@ -217,7 +222,6 @@ class FitTrendModel(object):
         with tf.Session(graph=self.graph) as session:
             self.init_vars(input_data, session)
             _, hps, loss, predict, grads = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict, self.grads], feed_dict=fit_dict)
-            self.stable_loss_predict_collect.append(loss)
             self.info_collect(hps, grads, loss, trend[-1])
             self.saver.save(session, self.save_path)
             return np.reshape(hps, [self.hyper_cnt])

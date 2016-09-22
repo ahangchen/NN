@@ -14,7 +14,7 @@ def test_label(test_data):
 
 
 if __name__ == '__main__':
-    test_hps = test_inputs(2)
+    test_hps = test_inputs(5)
     test_labels = test_label(test_hps)
     # for test_hp in test_hps:
     #     test_hp.extend(range(1, 10))

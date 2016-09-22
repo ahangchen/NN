@@ -178,8 +178,11 @@ class FitTrendModel(object):
                 optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
                 return optimizer_hp
 
-            self.fit_loss_static = list()
-            self.stable_loss_static = list()
+            self.fit_loss_collect = list()
+            self.stable_loss_predict_collect = list()
+            self.hp_collect = [list() for _ in range(self.hyper_cnt)]
+            self.gradient_collect = [list() for _ in range(self.hyper_cnt)]
+            self.stable_loss_label_collect = list()
             self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
 
             self.saver = tf.train.Saver()
@@ -204,16 +207,7 @@ class FitTrendModel(object):
             self.init_vars(input_data, session)
             _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
-            self.fit_loss_static.append(loss)
-            print('=' * 40)
-            print('hps:')
-            print(hps)
-            print('fit loss:')
-            print(loss)
-            print('predict:')
-            print(predict)
-            print('trend')
-            print(trend)
+            self.fit_loss_collect.append(loss)
 
     def better_hp(self, input_data, trend):
         fit_dict = dict()
@@ -223,31 +217,47 @@ class FitTrendModel(object):
         with tf.Session(graph=self.graph) as session:
             self.init_vars(input_data, session)
             _, hps, loss, predict, grads = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict, self.grads], feed_dict=fit_dict)
-            self.stable_loss_static.append(loss)
-            print('*' * 40)
-            print('hps:')
-            print(hps)
-            print('gradients:')
-            print(grads)
-            print('stable loss:')
-            print(loss)
-            # print('predict:')
-            # print(predict)
-            # print('trend')
-            # print(trend)
-
+            self.stable_loss_predict_collect.append(loss)
+            self.info_collect(hps, grads, loss, trend[-1])
             self.saver.save(session, self.save_path)
             return np.reshape(hps, [self.hyper_cnt])
 
-    def info_collect(self):
-        pass
+    def info_collect(self, hps, grads, stable_loss_predict, stable_loss_label, print_log=True):
+        for index, hp_list in enumerate(self.hp_collect):
+            hp_list.append(hps[index])
+        for index, grad_list in enumerate(self.gradient_collect):
+            grad_list.append(grads[index])
+        self.stable_loss_predict_collect.append(stable_loss_predict)
+        self.stable_loss_label_collect.append(stable_loss_label)
+        if print_log:
+            print('hps')
+            print(hps)
+            print('grads')
+            print(grads)
+            print('stable_loss_predict')
+            print(stable_loss_predict)
+            print('stable_loss_label')
+            print(stable_loss_label)
 
     def dump_collect(self):
-        print('stable_loss_static')
-        for loss in self.stable_loss_static:
+        print('stable_loss_predict_collect')
+        for loss in self.stable_loss_predict_collect:
             print(loss)
+        print('stable_loss_label_collect')
+        for loss in self.stable_loss_label_collect:
+            print(loss)
+        print('hp_change:')
+        for hps in self.hp_collect:
+            for hp in hps:
+                print(hp[0])
+            print('-' * 40)
+        print('gradient_change:')
+        for grads in self.gradient_collect:
+            for grad in grads:
+                print(grad)
+            print('-' * 40)
         print('fit_loss_static')
-        for loss in self.fit_loss_static:
+        for loss in self.fit_loss_collect:
             print(loss)
 
 

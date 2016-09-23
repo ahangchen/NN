@@ -247,7 +247,7 @@ class FitTrendModel(object):
     def info_collect(self, hps, grads, stable_loss_predict, stable_loss_label, print_log=True):
         for index, hp_list in enumerate(self.hp_collect):
             hp_list.append(hps[index])
-            file_helper.write('hp2trend_hps%d.txt' % index, str(hps[index]))
+            file_helper.write('hp2trend_hps%d.txt' % index, str(hps[index][0] * self.hp_norms[index]))
         for index, grad_list in enumerate(self.gradient_collect):
             grad_list.append(grads[index])
             file_helper.write('hp2trend_grads%d.txt' % index, str(grads[index]))

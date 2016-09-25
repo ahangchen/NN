@@ -168,4 +168,43 @@ def viz_fit_predict():
         del predict_loss[:]
 
 
-viz_fit_predict()
+def viz_hp2trend(dir_pos):
+    fit_loss_es = file_helper.read2mem(dir_pos + 'hp2trend_fit_loss.txt').split('\n')[:-1]
+    stable_loss_es_predict = file_helper.read2mem(dir_pos + 'hp2trend_stable_loss_predict.txt').split('\n')[:-1]
+    stable_loss_es_label = file_helper.read2mem(dir_pos + 'hp2trend_stable_loss_label.txt').split('\n')[:-1]
+    hps = list()
+    for i in range(5):
+        hps.append(file_helper.read2mem(dir_pos + 'hp2trend_hps%d.txt' % i).split('\n')[:-1])
+    grads = list()
+    for i in range(5):
+        grads.append(file_helper.read2mem(dir_pos + 'hp2trend_grads%d.txt' % i).split('\n')[:-1])
+    plt.plot(fit_loss_es, label='fit_loss')
+    plt.savefig(dir_pos + 'hp2trend_fit_loss.jpg')
+    plt.clf()
+    del fit_loss_es[:]
+    pl_stable_loss_predict, = plt.plot(stable_loss_es_predict, label='stable_loss_predict')
+    pl_stable_loss_label, = plt.plot(stable_loss_es_label, label='stable_loss_label')
+    plt.legend(handles=[pl_stable_loss_predict, pl_stable_loss_label])
+    plt.savefig(dir_pos + 'stable_loss.jpg')
+    plt.clf()
+    del stable_loss_es_predict[:]
+    del stable_loss_es_label[:]
+    pl_list = list()
+    for i in range(5):
+        pl_hp, = plt.plot(hps[i], label='hp%d' % i)
+        pl_list.append(pl_hp)
+    plt.legend(handles=pl_list)
+    plt.savefig(dir_pos + 'hps.jpg')
+    plt.clf()
+    del pl_list[:]
+    for i in range(5):
+        pl_grad, = plt.plot(grads[i], label='grad%d' % i)
+        pl_list.append(pl_grad)
+    plt.legend(handles=pl_list)
+    plt.savefig(dir_pos + 'grads.jpg')
+    plt.clf()
+    del pl_list[:]
+
+
+if __name__ == '__main__':
+    viz_hp2trend('/home/cwh/Mission/data/')

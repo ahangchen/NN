@@ -116,7 +116,7 @@ def var_optimizer(var_list, loss, start_rate=0.1, lrd=True):
     learning_rate = start_rate
     if lrd:
         learning_rate = tf.train.exponential_decay(
-            start_rate, global_step, 50, 0.1, staircase=True)
+            start_rate, global_step, 100, 0.8, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -218,7 +218,7 @@ class FitTrendModel(object):
             self.init_vars(norm_hps, session, not self.has_init)
             _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
             self.saver.save(session, self.save_path)
-            if self.collect_counter % 10 == 0:
+            if self.collect_counter % 20 == 0:
                 self.fit_loss_collect.append(loss)
                 file_helper.write('hp2trend_fit_loss.txt', str(loss))
             self.collect_counter += 1

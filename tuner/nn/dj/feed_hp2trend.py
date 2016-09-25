@@ -17,6 +17,6 @@ def train(input_data, trend):
 
 
 def trend2_better_hp(input_data, trend):
-    for _ in range(10):
+    for _ in range(20):
         fit(input_data, trend)
     return train(input_data, trend)

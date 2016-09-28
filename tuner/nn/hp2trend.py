@@ -9,7 +9,7 @@ from tuner.util import file_helper
 def assign_diffable_vars2tensor(placeholder, input_size):
     # 为了赋值
     placeholder_piece_s = tf.split(0, input_size, placeholder)
-    empty_var_inputs = [tf.Variable(0.0, name='init_hp_%d' % i, trainable=False) for i in range(input_size)]
+    empty_var_inputs = [tf.Variable(0.1, name='init_hp_%d' % i, trainable=False) for i in range(input_size)]
     variable_info_input = [var_init_hyper.assign(tf.reshape(placeholder_piece_s[i], shape=()))
                            for i, var_init_hyper in enumerate(empty_var_inputs)]
     # 为了求导
@@ -34,21 +34,20 @@ def tensor_reshape_with_matrix(input_matrix, output_shape):
     left_biase = tf.Variable(tf.truncated_normal([int(input_shape[1])]))
     left_output = tf.nn.xw_plus_b(left_weight, input_matrix, left_biase)
     left_output = tf.nn.relu(left_output)
-    right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]]))
-    right_biase = tf.Variable(tf.truncated_normal([output_shape[1]]))
+    right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]], stddev=0.1))
+    right_biase = tf.Variable(tf.truncated_normal([output_shape[1]], stddev=0.1))
     right_output = tf.nn.xw_plus_b(left_output, right_weight, right_biase)
     return right_output
 
 
-def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=2):
+def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=3):
     input_shape = input_tensor.get_shape()
     input_shape = [int(shape_i) for shape_i in input_shape]
     # input shape 是一个二维数组
-    hidden_node_count = 64
+    hidden_node_count = 128
     # start weight
-    hidden_stddev = np.sqrt(2.0 / input_shape[1])
     weights1 = tf.Variable(
-        tf.truncated_normal([input_shape[1], hidden_node_count], stddev=hidden_stddev))
+        tf.truncated_normal([input_shape[1], hidden_node_count], stddev=0.1))
     biases1 = tf.Variable(tf.zeros([hidden_node_count]))
     # middle weight
     weights = []
@@ -59,9 +58,8 @@ def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=2):
             hidden_next_cnt = int(hidden_cur_cnt / 2)
         else:
             hidden_next_cnt = 2
-        hidden_stddev = np.sqrt(2.0 / hidden_cur_cnt)
         weights.append(
-            tf.Variable(tf.truncated_normal([hidden_cur_cnt, hidden_next_cnt], stddev=hidden_stddev)))
+            tf.Variable(tf.truncated_normal([hidden_cur_cnt, hidden_next_cnt], stddev=0.1)))
         biases.append(tf.Variable(tf.zeros([hidden_next_cnt])))
         hidden_cur_cnt = hidden_next_cnt
     # first wx + b
@@ -116,7 +114,7 @@ def var_optimizer(var_list, loss, start_rate=0.1, lrd=True):
     learning_rate = start_rate
     if lrd:
         learning_rate = tf.train.exponential_decay(
-            start_rate, global_step, 100, 0.8, staircase=True)
+            start_rate, global_step, 200, 0.8, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -129,7 +127,7 @@ def var_gradient(var_list, loss, start_rate=0.1, lrd=True):
     learning_rate = start_rate
     if lrd:
         learning_rate = tf.train.exponential_decay(
-            start_rate, global_step, 50, 0.8, staircase=True)
+            start_rate, global_step, 200, 0.8, staircase=True)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, return_v = zip(*optimizer.compute_gradients(loss, var_list=var_list))
     return gradients
@@ -158,7 +156,7 @@ class FitTrendModel(object):
             rnn_step = 5
             trend_input = tf.concat(0, [self.tf_hypers for _ in range(rnn_step)])
             # 通过一个RNN
-            trend_outputs = rnn(trend_input)
+            trend_outputs = rnn(trend_input, n_hidden=128)
             print('rnn output')
             print(tf.concat(0, trend_outputs))
             # RNN接一个DNN
@@ -181,14 +179,14 @@ class FitTrendModel(object):
             self.var_s = tf.trainable_variables()
             self.v_hp_s = self.var_s[0: self.hyper_cnt]
             self.v_fit_s = [v for v in self.var_s if v not in self.v_hp_s]
-            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.01, lrd=False)
+            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
 
             def optimize_fit():
                 optimizer_fit = var_optimizer(self.v_fit_s, self.loss)
                 return optimizer_fit
 
             def optimize_hp():
-                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.01, lrd=False)
+                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
                 return optimizer_hp
 
             self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
@@ -242,7 +240,6 @@ class FitTrendModel(object):
     def norm(self, params):
         for param in params:
             self.hp_norms.append(param * 10.0)
-        print(self.hp_norms)
 
     def info_collect(self, hps, grads, stable_loss_predict, stable_loss_label, print_log=True):
         for index, hp_list in enumerate(self.hp_collect):

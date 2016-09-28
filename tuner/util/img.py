@@ -207,4 +207,4 @@ def viz_hp2trend(dir_pos):
 
 
 if __name__ == '__main__':
-    viz_hp2trend('/home/cwh/Mission/data/')
+    viz_hp2trend('../../')

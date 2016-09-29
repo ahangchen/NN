@@ -4,6 +4,7 @@ import json
 from django.views.decorators.csrf import csrf_exempt
 
 from tuner.nn.dj import fit_predict
+from tuner.nn.dj.feed_half_trend import half_trend2_better_hp
 from tuner.nn.dj.feed_hp2trend import trend2_better_hp
 from tuner.nn.dj.fit_predict import predict_future
 from tuner.nn.test.tf_train import train_cnn, CONTINUE_TRAIN, END_TRAIN, NN_OK, better_hyper
@@ -90,3 +91,13 @@ def hp2trend(request):
     print(better_hps)
     return json_helper.dump_err_msg(NN_OK, better_hps)
 
+
+@csrf_exempt
+def half_trend(request):
+    cur_loss = request.POST.getlist('loss')
+    cur_loss = json.loads(cur_loss[0])
+    hypers = request.POST.getlist('hyper')
+    hypers = json.loads(hypers[0])
+    better_hps = half_trend2_better_hp(hypers, cur_loss)
+    print(better_hps)
+    return json_helper.dump_err_msg(NN_OK, better_hps)

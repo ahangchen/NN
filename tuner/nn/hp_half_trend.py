@@ -44,7 +44,7 @@ def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=3):
     input_shape = input_tensor.get_shape()
     input_shape = [int(shape_i) for shape_i in input_shape]
     # input shape 是一个二维数组
-    hidden_node_count = 128
+    hidden_node_count = 256
     # start weight
     weights1 = tf.Variable(
         tf.truncated_normal([input_shape[1], hidden_node_count], stddev=0.1))
@@ -134,9 +134,10 @@ def var_gradient(var_list, loss, start_rate=0.1, lrd=True):
 
 
 class FitTrendModel(object):
-    def __init__(self, input_size, output_size):
+    def __init__(self, input_size, trend_size):
         self.graph = tf.Graph()
         self.hyper_cnt = input_size
+        self.trend_size = trend_size
         self.save_path = "fit_trend.ckpt"
 
         self.collect_counter = 0
@@ -152,22 +153,25 @@ class FitTrendModel(object):
         with self.graph.as_default():
             # 接收输入
             self.ph_hypers = tf.placeholder(tf.float32, shape=[self.hyper_cnt], name='ph_hypers')
+            self.half_input_trends = tf.placeholder(tf.float32, shape=[trend_size / 2], name='half_trends')
+            self.train_label = tf.placeholder(tf.float32, shape=[trend_size / 2], name='train_label')
             self.tf_hypers, self.reset_vars = assign_diffable_vars2tensor(self.ph_hypers, self.hyper_cnt)
-            rnn_step = 5
-            trend_input = tf.concat(0, [self.tf_hypers for _ in range(rnn_step)])
+            input_array = tf.split(0, self.hyper_cnt, self.tf_hypers)
+            input_array.extend(tf.split(0, trend_size / 2, tf.reshape(self.half_input_trends, shape=[trend_size / 2, 1])))
+            print(input_array)
+            trend_input = tf.concat(0, input_array)
             # 通过一个RNN
             trend_outputs = rnn(trend_input, n_hidden=128)
             print('rnn output')
             print(tf.concat(0, trend_outputs))
             # RNN接一个DNN
-            trend_output = dnn(tf.concat(0, trend_outputs), [1, output_size])
+            trend_output = dnn(tf.concat(0, trend_outputs), [1, trend_size / 2], layer_cnt=4)
             print('dnn output')
             print(trend_output)
             self.predict = trend_output
             # 实际的trend
-            self.train_label = tf.placeholder(tf.float32, shape=[output_size], name='train_label')
             # 预测准确率，predict和trend的几何距离
-            predict_accuracy = tf.sqrt(tf.reduce_sum(tf.square(tf.sub(trend_output, self.train_label)))) / output_size
+            predict_accuracy = tf.sqrt(tf.reduce_sum(tf.square(tf.sub(trend_output, self.train_label)))) / trend_size
             # predict_accuracy /= tf.reduce_mean(tf.concat(0, self.train_label))
             # 稳定时损失，最后一个损失
             stable_loss = tf.unpack(tf.unpack(trend_output)[0])[-1]
@@ -186,7 +190,7 @@ class FitTrendModel(object):
                 return optimizer_fit
 
             def optimize_hp():
-                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
+                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.8, lrd=False)
                 return optimizer_hp
 
             self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
@@ -211,10 +215,12 @@ class FitTrendModel(object):
         fit_dict = dict()
         fit_dict[self.is_fit] = True
         fit_dict[self.ph_hypers] = norm_hps
-        fit_dict[self.train_label] = trend
+        fit_dict[self.half_input_trends] = trend[0: self.trend_size / 2]
+        fit_dict[self.train_label] = trend[self.trend_size / 2:]
         with tf.Session(graph=self.graph) as session:
             self.init_vars(norm_hps, session, not self.has_init)
             _, hps, loss, predict = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict], feed_dict=fit_dict)
+            print('fit success')
             self.saver.save(session, self.save_path)
             if self.collect_counter % 20 == 0:
                 self.fit_loss_collect.append(loss)
@@ -228,7 +234,8 @@ class FitTrendModel(object):
         fit_dict = dict()
         fit_dict[self.is_fit] = False
         fit_dict[self.ph_hypers] = input_data
-        fit_dict[self.train_label] = trend
+        fit_dict[self.half_input_trends] = trend[0: self.trend_size / 2]
+        fit_dict[self.train_label] = trend[self.trend_size / 2:]
         with tf.Session(graph=self.graph) as session:
             self.init_vars(input_data, session)
             _, hps, loss, predict, grads = session.run([self.optimizer, self.tf_hypers, self.loss, self.predict, self.grads], feed_dict=fit_dict)

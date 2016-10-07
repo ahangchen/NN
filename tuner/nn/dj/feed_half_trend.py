@@ -28,6 +28,6 @@ def half_trend2_better_hp(input_data, trend):
         fit(input_data, trend_i)
     if len(cur_trends) >= 20:
         cur_trends.pop(0)
-    # for _ in range(5):
-    #     train(input_data, trend)
+    for _ in range(5):
+        train(input_data, trend)
     return train(input_data, trend)

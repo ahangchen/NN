@@ -6,6 +6,7 @@ cur_trends = list()
 
 
 def fit(input_data, trend):
+    # print(trend)
     global model
     if model is None:
         model = init_model(len(input_data), len(trend))

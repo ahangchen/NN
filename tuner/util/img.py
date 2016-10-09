@@ -32,7 +32,7 @@ def mark():
             jpg_name = str(
                 [num_str[0: 4].replace("-", "") for num_str in exp_data[1: -1].split()]
             )[1: -1].replace("'", "").replace(', ', '-')
-            plt.savefig('data/' + str(line_cnt / 2) + '-' + jpg_name + '.jpg')
+            plt.savefig('data/' + str(line_cnt / 2) + '-' + jpg_name + '.png')
             plt.clf()
             continue
         else:
@@ -61,7 +61,7 @@ def avg_line():
                 cur_sum += float(exp_data)
                 cur_cnt += 1
     plt.plot(avg_s)
-    plt.savefig('data/avg_loss_change.jpg')
+    plt.savefig('data/avg_loss_change.png')
     plt.show()
 
 
@@ -89,7 +89,7 @@ def hp_line():
     layer_pl, = plt.plot(layer_cnt_s, label='layer_cnt')
     patch_pl, = plt.plot(patch_size_s, label='patch_size')
     plt.legend(handles=[batch_pl, depth_pl, num_pl, layer_pl, patch_pl])
-    plt.savefig('data/hp_change.jpg')
+    plt.savefig('data/hp_change.png')
     plt.show()
 
 
@@ -117,7 +117,7 @@ def grad_line():
     layer_pl, = plt.plot(layer_cnt_s, label='layer_cnt')
     patch_pl, = plt.plot(patch_size_s, label='patch_size')
     plt.legend(handles=[batch_pl, depth_pl, num_pl, layer_pl, patch_pl])
-    plt.savefig('data/grad_change.jpg')
+    plt.savefig('data/grad_change.png')
     plt.show()
 
 
@@ -161,7 +161,7 @@ def viz_fit_predict():
         actual_pl, = plt.plot(actual_loss, label='actual')
         predict_pl, = plt.plot(predict_loss, label='predict')
         plt.legend(handles=[actual_pl, predict_pl])
-        plt.savefig('data/fit_result%d.jpg' % cur_idx)
+        plt.savefig('data/fit_result%d.png' % cur_idx)
         plt.clf()
         cur_idx += 1
         del actual_loss[:]
@@ -179,13 +179,13 @@ def viz_hp2trend(dir_pos):
     for i in range(5):
         grads.append(file_helper.read2mem(dir_pos + 'hp2trend_grads%d.txt' % i).split('\n')[:-1])
     plt.plot(fit_loss_es, label='fit_loss')
-    plt.savefig(dir_pos + 'hp2trend_fit_loss.jpg')
+    plt.savefig(dir_pos + 'hp2trend_fit_loss.png')
     plt.clf()
     del fit_loss_es[:]
     pl_stable_loss_predict, = plt.plot(stable_loss_es_predict, label='stable_loss_predict')
     pl_stable_loss_label, = plt.plot(stable_loss_es_label, label='stable_loss_label')
     plt.legend(handles=[pl_stable_loss_predict, pl_stable_loss_label])
-    plt.savefig(dir_pos + 'stable_loss.jpg')
+    plt.savefig(dir_pos + 'stable_loss.png')
     plt.clf()
     del stable_loss_es_predict[:]
     del stable_loss_es_label[:]
@@ -194,14 +194,14 @@ def viz_hp2trend(dir_pos):
         pl_hp, = plt.plot(hps[i], label='hp%d' % i)
         pl_list.append(pl_hp)
     plt.legend(handles=pl_list)
-    plt.savefig(dir_pos + 'hps.jpg')
+    plt.savefig(dir_pos + 'hps.png')
     plt.clf()
     del pl_list[:]
     for i in range(5):
         pl_grad, = plt.plot(grads[i], label='grad%d' % i)
         pl_list.append(pl_grad)
     plt.legend(handles=pl_list)
-    plt.savefig(dir_pos + 'grads.jpg')
+    plt.savefig(dir_pos + 'grads.png')
     plt.clf()
     del pl_list[:]
 

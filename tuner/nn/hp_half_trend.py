@@ -6,6 +6,18 @@ import tensorflow as tf
 from tuner.util import file_helper
 
 
+def corrcoef(x, y):
+    n = int(x.get_shape()[0])
+    sum1 = tf.reduce_sum(x)
+    sum2 = tf.reduce_sum(y)
+    sumofxy = tf.reduce_sum(tf.mul(x, y))
+    sumofx2 = tf.reduce_sum(tf.square(x))
+    sumofy2 = tf.reduce_sum(tf.square(y))
+    num = sumofxy - sum1 * sum2 / n
+    den = tf.sqrt((sumofx2 - sum1**2/n)*(sumofy2-sum2**2/n))
+    return num/den
+
+
 def assign_diffable_vars2tensor(placeholder, input_size):
     # 为了赋值
     placeholder_piece_s = tf.split(0, input_size, placeholder)
@@ -27,24 +39,26 @@ def assign_diffable_vars2tensor(placeholder, input_size):
     return tf_info_var_2d, reset_hps
 
 
-def tensor_reshape_with_matrix(input_matrix, output_shape):
+def tensor_reshape_with_matrix(input_matrix, output_shape, relu=False):
     # 一般从二维到一维
     input_shape = input_matrix.get_shape()
     left_weight = tf.Variable(tf.truncated_normal([output_shape[0], int(input_shape[0])]))
     left_biase = tf.Variable(tf.truncated_normal([int(input_shape[1])]))
     left_output = tf.nn.xw_plus_b(left_weight, input_matrix, left_biase)
-    left_output = tf.nn.relu(left_output)
+    if relu:
+        left_output = tf.nn.relu(left_output)
+
     right_weight = tf.Variable(tf.truncated_normal([int(input_shape[1]), output_shape[1]], stddev=0.1))
     right_biase = tf.Variable(tf.truncated_normal([output_shape[1]], stddev=0.1))
     right_output = tf.nn.xw_plus_b(left_output, right_weight, right_biase)
     return right_output
 
 
-def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=3):
+def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=3, relu=False):
     input_shape = input_tensor.get_shape()
     input_shape = [int(shape_i) for shape_i in input_shape]
     # input shape 是一个二维数组
-    hidden_node_count = 256
+    hidden_node_count = 128
     # start weight
     weights1 = tf.Variable(
         tf.truncated_normal([input_shape[1], hidden_node_count], stddev=0.1))
@@ -65,7 +79,10 @@ def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=3):
     # first wx + b
     y0 = tf.matmul(input_tensor, weights1) + biases1
     # first relu6
-    hidden = tf.nn.relu(y0)
+    if relu:
+        hidden = tf.nn.relu(y0)
+    else:
+        hidden = y0
     hidden_drop = hidden
     # first DropOut
     keep_prob = 0.5
@@ -75,13 +92,21 @@ def dnn(input_tensor, output_shape, drop_out=False, layer_cnt=3):
     # middle layer
     for i in range(layer_cnt - 2):
         y1 = tf.matmul(hidden_drop, weights[i]) + biases[i]
-        hidden_drop = tf.nn.relu(y1)
+        if relu:
+            hidden_drop = tf.nn.relu(y1)
+        else:
+            hidden_drop = y1
         if drop_out:
             keep_prob += 0.5 * i / (layer_cnt + 1)
             hidden_drop = tf.nn.dropout(hidden_drop, keep_prob)
-
+        print(hidden)
+        print(weights[i])
+        print(biases[i])
         y0 = tf.matmul(hidden, weights[i]) + biases[i]
-        hidden = tf.nn.relu(y0)
+        if relu:
+            hidden = tf.nn.relu(y0)
+        else:
+            hidden = y0
     output = tensor_reshape_with_matrix(hidden, [output_shape[0], output_shape[1]])
     # last weight
     # weights2 = tf.Variable(tf.truncated_normal([hidden_cur_cnt, output_shape[0]], stddev=hidden_stddev / 2))
@@ -170,8 +195,11 @@ class FitTrendModel(object):
             print(trend_output)
             self.predict = trend_output
             # 实际的trend
-            # 预测准确率，predict和trend的几何距离
+            # predict和trend的几何距离, 越小越好
             predict_accuracy = tf.sqrt(tf.reduce_sum(tf.square(tf.sub(trend_output, self.train_label)))) / trend_size
+            # 相关系数，越大越好
+            predict_accuracy /= corrcoef(trend_output, self.train_label)
+
             # predict_accuracy /= tf.reduce_mean(tf.concat(0, self.train_label))
             # 稳定时损失，最后一个损失
             stable_loss = tf.unpack(tf.unpack(trend_output)[0])[-1]
@@ -183,14 +211,14 @@ class FitTrendModel(object):
             self.var_s = tf.trainable_variables()
             self.v_hp_s = self.var_s[0: self.hyper_cnt]
             self.v_fit_s = [v for v in self.var_s if v not in self.v_hp_s]
-            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.1, lrd=False)
+            self.grads = var_gradient(self.v_hp_s, self.loss, start_rate=0.2, lrd=False)
 
             def optimize_fit():
                 optimizer_fit = var_optimizer(self.v_fit_s, self.loss)
                 return optimizer_fit
 
             def optimize_hp():
-                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.8, lrd=False)
+                optimizer_hp = var_optimizer(self.v_hp_s, self.loss, start_rate=0.2, lrd=False)
                 return optimizer_hp
 
             self.optimizer = tf.cond(self.is_fit, optimize_fit, optimize_hp)
